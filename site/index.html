@@ -233,7 +233,13 @@
   .note a:hover { text-decoration: underline; }
 
   .dl { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; }
-  .dl .facts { list-style: none; margin: 32px 0 0; padding: 0; font-size: 15px; color: var(--muted); }
+  [hidden] { display: none !important; }
+  .os { display: inline-flex; gap: 4px; margin-top: 28px; padding: 4px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); }
+  .os button { border: 0; background: none; color: var(--muted); font: 500 14px "Be Vietnam Pro", sans-serif; padding: 7px 16px; border-radius: 999px; cursor: pointer; }
+  .os button:hover { color: var(--text); }
+  .os button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgb(28 25 23 / .06); }
+  .os button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .dl .facts { list-style: none; margin: 20px 0 0; padding: 0; font-size: 15px; color: var(--muted); }
   .dl .facts li { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
   .dl .facts li b { color: var(--text); font-weight: 500; }
   .term {
@@ -296,9 +302,11 @@
     <h1 data-i18n="h1">One browser,<br>zero distractions.</h1>
     <p class="lede" data-i18n="lede">Like a pebble beneath the stream.<br>The web flows by. Opz stays put.</p>
     <div class="cta">
-      <a class="btn dark" href="/updates/latest/opz-mac.dmg" download>
+      <a class="btn dark" id="dlbtn" href="/updates/latest/opz-mac.dmg" download>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 7.5 8 11.5l4-4M3 14h10"/></svg>
-        <span data-i18n="cta.dl">Download for macOS</span>
+        <span data-for="mac" data-i18n="cta.dl">Download for macOS</span>
+        <span data-for="win" data-i18n="cta.win" hidden>Download for Windows</span>
+        <span data-for="linux" data-i18n="cta.linux" hidden>Download for Linux</span>
       </a>
       <a class="btn ghost" href="#why" data-i18n="cta.more">See what’s different</a>
     </div>
@@ -413,17 +421,42 @@
       <div>
         <span class="label" data-i18n="nav.dl">Download</span>
         <h2 data-i18n="dl.h">Installed in three commands.</h2>
-        <ul class="facts">
-          <li><span data-i18n="fact.ver">Version</span> <b>159.0.1</b></li>
-          <li><span data-i18n="fact.plat">Platform</span> <b>macOS · Apple Silicon</b></li>
-          <li><span data-i18n="fact.size">Size</span> <b>120 MB</b></li>
-          <li><span data-i18n="fact.upd">Auto-updates</span> <b data-i18n="yes">Yes</b></li>
-        </ul>
-        <p class="note" data-i18n="dl.note">Or open the <a href="/updates/latest/opz-mac.dmg" download>.dmg</a> and drag Opz into Applications. Signed and notarized by Apple. Linux build coming soon.</p>
+        <div class="os" role="tablist" aria-label="Platform" data-i18n-aria="fact.plat">
+          <button type="button" role="tab" data-os="mac" aria-selected="true">macOS</button>
+          <button type="button" role="tab" data-os="win" aria-selected="false">Windows</button>
+          <button type="button" role="tab" data-os="linux" aria-selected="false">Linux</button>
+        </div>
+        <div data-for="mac">
+          <ul class="facts">
+            <li><span data-i18n="fact.ver">Version</span> <b>159.0.1</b></li>
+            <li><span data-i18n="fact.plat">Platform</span> <b>macOS · Apple Silicon</b></li>
+            <li><span data-i18n="fact.size">Size</span> <b>120 MB</b></li>
+            <li><span data-i18n="fact.upd">Auto-updates</span> <b data-i18n="yes">Yes</b></li>
+          </ul>
+          <p class="note" data-i18n="dl.note">Or open the <a href="/updates/latest/opz-mac.dmg" download>.dmg</a> and drag Opz into Applications. Signed and notarized by Apple.</p>
+        </div>
+        <div data-for="win" hidden>
+          <ul class="facts">
+            <li><span data-i18n="fact.ver">Version</span> <b>159.0.1</b></li>
+            <li><span data-i18n="fact.plat">Platform</span> <b>Windows 10 / 11 · x64</b></li>
+            <li><span data-i18n="fact.size">Size</span> <b>130 MB</b></li>
+            <li><span data-i18n="fact.upd">Auto-updates</span> <b data-i18n="yes">Yes</b></li>
+          </ul>
+          <p class="note" data-i18n="dl.win">Or download the <a href="/updates/latest/opz-win64.zip" download>.zip</a> and extract it into your user folder, such as <code>%LOCALAPPDATA%</code>, so Opz can update itself without admin rights. Not code-signed yet: the first time, SmartScreen asks; choose <b>More info → Run anyway</b>.</p>
+        </div>
+        <div data-for="linux" hidden>
+          <ul class="facts">
+            <li><span data-i18n="fact.ver">Version</span> <b>159.0.1</b></li>
+            <li><span data-i18n="fact.plat">Platform</span> <b>Linux · x86_64</b></li>
+            <li><span data-i18n="fact.size">Size</span> <b>82 MB</b></li>
+            <li><span data-i18n="fact.upd">Auto-updates</span> <b data-i18n="yes">Yes</b></li>
+          </ul>
+          <p class="note" data-i18n="dl.linux">Or download the <a href="/updates/latest/opz-linux-x86_64.tar.xz" download>.tar.xz</a> and extract it anywhere you can write to. <code>install-desktop.sh</code> adds Opz to your app menu, no root needed.</p>
+        </div>
       </div>
       <div class="term">
         <div class="top"><span><i></i><i></i><i></i></span><button class="copy" id="copy" type="button">Copy</button></div>
-<pre id="cmd"><span class="c" data-i18n="c1"># download</span>
+<pre class="cmd" data-for="mac"><span class="c" data-i18n="c1"># download</span>
 <span class="p">$ </span>curl -LO https://opz-browser.vtpozt.link/updates/latest/opz-mac.dmg
 
 <span class="c" data-i18n="c2"># copy into Applications</span>
@@ -431,6 +464,22 @@
 
 <span class="c" data-i18n="c3"># launch Opz</span>
 <span class="p">$ </span>open -a Opz</pre>
+<pre class="cmd" data-for="win" hidden><span class="c" data-i18n="c1w"># download (PowerShell)</span>
+<span class="p">&gt; </span>curl.exe -LO https://opz-browser.vtpozt.link/updates/latest/opz-win64.zip
+
+<span class="c" data-i18n="c2w"># extract into your user folder</span>
+<span class="p">&gt; </span>Expand-Archive opz-win64.zip $env:LOCALAPPDATA -Force
+
+<span class="c" data-i18n="c3"># launch Opz</span>
+<span class="p">&gt; </span>&amp; "$env:LOCALAPPDATA\Opz\firefox.exe"</pre>
+<pre class="cmd" data-for="linux" hidden><span class="c" data-i18n="c1"># download</span>
+<span class="p">$ </span>curl -LO https://opz-browser.vtpozt.link/updates/latest/opz-linux-x86_64.tar.xz
+
+<span class="c" data-i18n="c2l"># extract and add to the app menu</span>
+<span class="p">$ </span>mkdir -p ~/Apps &amp;&amp; tar -xJf opz-linux-x86_64.tar.xz -C ~/Apps &amp;&amp; ~/Apps/opz/install-desktop.sh
+
+<span class="c" data-i18n="c3"># launch Opz</span>
+<span class="p">$ </span>~/Apps/opz/opz</pre>
       </div>
     </div>
   </section>
@@ -496,7 +545,14 @@
     'fact.size': 'Dung lượng',
     'fact.upd': 'Tự cập nhật',
     'yes': 'Có',
-    'dl.note': 'Hoặc mở file <a href="/updates/latest/opz-mac.dmg" download>.dmg</a> và kéo Opz vào Applications. Đã được Apple ký và notarize. Bản Linux sẽ có sau.',
+    'dl.note': 'Hoặc mở file <a href="/updates/latest/opz-mac.dmg" download>.dmg</a> và kéo Opz vào Applications. Đã được Apple ký và notarize.',
+    'dl.win': 'Hoặc tải file <a href="/updates/latest/opz-win64.zip" download>.zip</a> và giải nén vào thư mục của bạn, vd. <code>%LOCALAPPDATA%</code>, để Opz tự cập nhật mà không cần quyền admin. Bản này chưa ký mã: lần đầu mở, SmartScreen sẽ hỏi, chọn <b>More info → Run anyway</b>.',
+    'dl.linux': 'Hoặc tải file <a href="/updates/latest/opz-linux-x86_64.tar.xz" download>.tar.xz</a> và giải nén vào thư mục bất kỳ bạn ghi được. <code>install-desktop.sh</code> thêm Opz vào menu ứng dụng, không cần root.',
+    'cta.win': 'Tải cho Windows',
+    'cta.linux': 'Tải cho Linux',
+    'c1w': '# tải về (PowerShell)',
+    'c2w': '# giải nén vào thư mục của bạn',
+    'c2l': '# giải nén và thêm vào menu ứng dụng',
     'c1': '# tải về',
     'c2': '# chép vào Applications',
     'c3': '# mở Opz',
@@ -540,9 +596,39 @@
   document.getElementById('cover').addEventListener('click', e => { if (e.target.id === 'cover') win.classList.remove('open'); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') win.classList.remove('open'); });
 
+  // Platform: the hero button, the download tabs, their facts and commands.
+  const FILES = { mac: 'opz-mac.dmg', win: 'opz-win64.zip', linux: 'opz-linux-x86_64.tar.xz' };
+  const tabs = [...document.querySelectorAll('.os [data-os]')];
+  function setOS(os) {
+    document.getElementById('dlbtn').href = '/updates/latest/' + FILES[os];
+    for (const el of document.querySelectorAll('[data-for]')) el.hidden = el.dataset.for !== os;
+    for (const t of tabs) {
+      t.setAttribute('aria-selected', String(t.dataset.os === os));
+      t.tabIndex = t.dataset.os === os ? 0 : -1;
+    }
+  }
+  function detectOS() {
+    const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    const ua = navigator.userAgent || '';
+    if (/win/i.test(p) || /Windows/.test(ua)) return 'win';
+    if (!/Android/.test(ua) && (/linux|x11/i.test(p) || /Linux|X11/.test(ua))) return 'linux';
+    return 'mac';
+  }
+  for (const t of tabs) {
+    t.addEventListener('click', () => setOS(t.dataset.os));
+    t.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      const next = tabs[(tabs.indexOf(t) + d + tabs.length) % tabs.length];
+      setOS(next.dataset.os);
+      next.focus();
+    });
+  }
+  setOS(detectOS());
+
   copy.addEventListener('click', async () => {
-    const text = document.getElementById('cmd').innerText
-      .split('\n').filter(l => l.startsWith('$ ')).map(l => l.slice(2)).join('\n');
+    const text = document.querySelector('pre.cmd:not([hidden])').innerText
+      .split('\n').filter(l => /^[$>] /.test(l)).map(l => l.slice(2)).join('\n');
     try { await navigator.clipboard.writeText(text); copy.textContent = T[lang].copied; }
     catch { copy.textContent = T[lang].fail; }
     setTimeout(() => copy.textContent = T[lang].copy, 1600);
