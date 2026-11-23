@@ -288,10 +288,16 @@ if [ "$cross" -eq 0 ]; then
     nss pk12util -i "$stage/primary.p12" -d "$db" -W "" -K "" >/dev/null
     rm -f "$stage/primary.p12"
     nss signmar -d "$db" -n opz-primary -s "$stage/unsigned.mar" "$site/files/$mar"
-    rm -rf "$db"
     # Check it the way the updater will: against the certificate compiled in.
-    nss signmar -D "$OPZ_ROOT/updates/certs/primary.der" -v "$site/files/$mar" \
-        || die "signature check of $mar failed"
+    # signmar takes a DER file (-D) only on macOS and Windows; on Linux it
+    # checks against the NSS db, whose certificate was compared with
+    # updates/certs/primary.der above.
+    if [ "$OPZ_OS" = linux ]; then
+        nss signmar -d "$db" -n opz-primary -v "$site/files/$mar"
+    else
+        nss signmar -D "$OPZ_ROOT/updates/certs/primary.der" -v "$site/files/$mar"
+    fi || die "signature check of $mar failed"
+    rm -rf "$db"
 else
     # The same RSA-SHA384 signature signmar makes: hash the MAR with a signature
     # block in place, sign the hash with openssl, put the signature in.
