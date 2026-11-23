@@ -94,7 +94,9 @@ export FFB_ROOT OPZ_ROOT OPZ_OS OPZ_TARGET OPZ_ENGINE
 #   OPZ_BUILD=full      compiles everything (mozconfig.full); slow, but has
 #                       Opz's own updater. Releases are made from this one.
 # Each flavour has its own objdir, so switching does not throw away a build.
-export OPZ_BUILD="${OPZ_BUILD:-artifact}"
+# (A cross build, OPZ_TARGET below, is always full.)
+if [ "$OPZ_TARGET" != "$OPZ_OS" ]; then export OPZ_BUILD="${OPZ_BUILD:-full}"
+else export OPZ_BUILD="${OPZ_BUILD:-artifact}"; fi
 case "$OPZ_BUILD" in
     artifact) export MOZCONFIG="$OPZ_ROOT/mozconfig"      OPZ_OBJDIR="$OPZ_ENGINE/obj-artifact" ;;
     full)     export MOZCONFIG="$OPZ_ROOT/mozconfig.full" OPZ_OBJDIR="$OPZ_ENGINE/obj-full" ;;
