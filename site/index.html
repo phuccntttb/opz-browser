@@ -445,10 +445,10 @@
           <ul class="facts">
             <li><span data-i18n="fact.ver">Version</span> <b>159.0.1</b></li>
             <li><span data-i18n="fact.plat">Platform</span> <b>Windows 10 / 11 · x64</b></li>
-            <li><span data-i18n="fact.size">Size</span> <b>130 MB</b></li>
+            <li><span data-i18n="fact.size">Size</span> <b>86 MB</b></li>
             <li><span data-i18n="fact.upd">Auto-updates</span> <b data-i18n="yes">Yes</b></li>
           </ul>
-          <p class="note" data-i18n="dl.win">Or download the <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64.zip" download>.zip</a> and extract it into your user folder, such as <code>%LOCALAPPDATA%</code>, so Opz can update itself without admin rights. Not code-signed yet: the first time, SmartScreen asks; choose <b>More info → Run anyway</b>.</p>
+          <p class="note" data-i18n="dl.win">Run the <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64-setup.exe" download>installer</a>: it puts Opz in Program Files, so updates ask for admin rights. Or, with no installer and no admin rights, extract the <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64.zip" download>.zip</a> into your user folder with the commands shown. Not code-signed yet: the first time, SmartScreen asks; choose <b>More info → Run anyway</b>.</p>
         </div>
         <div data-for="linux" hidden>
           <ul class="facts">
@@ -470,7 +470,7 @@
 
 <span class="c" data-i18n="c3"># launch Opz</span>
 <span class="p">$ </span>open -a Opz</pre>
-<pre class="cmd" data-for="win" hidden><span class="c" data-i18n="c1w"># download (PowerShell)</span>
+<pre class="cmd" data-for="win" hidden><span class="c" data-i18n="c1w"># no installer: download the .zip (PowerShell)</span>
 <span class="p">&gt; </span>curl.exe -LO https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64.zip
 
 <span class="c" data-i18n="c2w"># extract into your user folder</span>
@@ -553,13 +553,13 @@
     'fact.upd': 'Tự cập nhật',
     'yes': 'Có',
     'dl.note': 'Hoặc mở file <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-mac.dmg" download>.dmg</a> và kéo Opz vào Applications. Đã được Apple ký và notarize.',
-    'dl.win': 'Hoặc tải file <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64.zip" download>.zip</a> và giải nén vào thư mục của bạn, vd. <code>%LOCALAPPDATA%</code>, để Opz tự cập nhật mà không cần quyền admin. Bản này chưa ký mã: lần đầu mở, SmartScreen sẽ hỏi, chọn <b>More info → Run anyway</b>.',
+    'dl.win': 'Chạy <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64-setup.exe" download>bộ cài</a>: Opz được cài vào Program Files, nên mỗi lần cập nhật sẽ xin quyền admin. Hoặc không cần cài, không cần quyền admin: giải nén file <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-win64.zip" download>.zip</a> vào thư mục của bạn theo các lệnh trong khung. Bản này chưa ký mã: lần đầu mở, SmartScreen sẽ hỏi, chọn <b>More info → Run anyway</b>.',
     'dl.linux': 'Hoặc tải file <a href="https://github.com/phuccntttb/opz-browser/releases/latest/download/opz-linux-x86_64.tar.xz" download>.tar.xz</a> và giải nén vào thư mục bất kỳ bạn ghi được. <code>install-desktop.sh</code> thêm Opz vào menu ứng dụng, không cần root.',
     'cta.win': 'Tải cho Windows',
     'foot.src': 'Mã nguồn trên GitHub',
     'aria.gh': 'Mã nguồn trên GitHub',
     'cta.linux': 'Tải cho Linux',
-    'c1w': '# tải về (PowerShell)',
+    'c1w': '# không cần cài: tải file .zip (PowerShell)',
     'c2w': '# giải nén vào thư mục của bạn',
     'c2l': '# giải nén và thêm vào menu ứng dụng',
     'c1': '# tải về',
@@ -606,7 +606,7 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') win.classList.remove('open'); });
 
   // Platform: the hero button, the download tabs, their facts and commands.
-  const FILES = { mac: 'opz-mac.dmg', win: 'opz-win64.zip', linux: 'opz-linux-x86_64.tar.xz' };
+  const FILES = { mac: 'opz-mac.dmg', win: 'opz-win64-setup.exe', linux: 'opz-linux-x86_64.tar.xz' };
   const tabs = [...document.querySelectorAll('.os [data-os]')];
   function setOS(os) {
     document.getElementById('dlbtn').href = 'https://github.com/phuccntttb/opz-browser/releases/latest/download/' + FILES[os];
