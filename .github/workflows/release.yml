@@ -5,7 +5,10 @@
 #
 # Runs when a tag v* is pushed (always publishes), or by hand from the
 # Actions tab ("Run workflow"), where publishing is off unless ticked.
-# Every run is a full compile of Firefox: expect a few hours per platform.
+# The first run is a full compile of Firefox (a few hours per platform). The
+# compiler cache (sccache, .github/ci-sccache.sh) is kept in the Actions cache,
+# also when the build fails or runs out of time, so later runs only recompile
+# what changed and a too-long first build finishes on the next run.
 #
 # Secrets (Settings -> Secrets and variables -> Actions); scripts/ci-secrets.sh
 # sets them all:
@@ -34,6 +37,7 @@ on:
 
 permissions:
   contents: read
+  actions: write   # delete superseded compiler caches (ci-sccache.sh prune)
 
 # One run at a time per platform choice, so a manual Linux run does not wait
 # hours behind a Windows one (each platform publishes to its own update
@@ -45,8 +49,13 @@ concurrency:
 env:
   # Runners have no separate system disk to protect (env.sh guard).
   OPZ_ROOT_MAX_LOSS_MB: '1000000'
-  # No compiler cache: each runner starts empty (mozconfig.full).
-  OPZ_NO_SCCACHE: '1'
+  # Compiler cache. 3G per OS keeps the three OSes inside the repo's 10 GB
+  # Actions cache. The server stays up for the whole build, and if it dies
+  # anyway the compiler runs without it instead of failing the build.
+  SCCACHE_CACHE_SIZE: 3G
+  SCCACHE_IDLE_TIMEOUT: '0'
+  SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
+  SCCACHE_LOG: warn
   # rrsync on the server maps "/" to /srv/opz/updates (see scripts/ci-secrets.sh).
   OPZ_UPDATE_PUBLISH: ubuntu@51.79.223.48:/
   DEPLOY_KNOWN_HOSTS: 51.79.223.48 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1/G7CfViHBi6KIFdaRsBCC9J9aOJnGBISN5MlG1u1p
@@ -87,6 +96,13 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/." /mnt/ffbuild/opz/
           sudo apt-get install -y --no-install-recommends xz-utils rsync unzip > /dev/null
 
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /mnt/ffbuild/cache/sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ runner.os }}-
+
       - name: Fetch Firefox, toolchains, patches
         run: |
           scripts/fetch.sh
@@ -94,7 +110,35 @@ jobs:
           scripts/apply.sh
 
       - name: Build
+        id: build
+        # Fails before the job's limit, so the compiler cache is still saved.
+        timeout-minutes: 320
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
         run: OPZ_BUILD=full scripts/build.sh
+
+      # Also after a failed or timed-out build: the next run resumes from it.
+      # Not from tag runs (their cache is only visible to that tag).
+      - name: Stop compiler cache
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
+        run: .github/ci-sccache.sh stop
+
+      - name: Save compiler cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        uses: actions/cache/save@v4
+        with:
+          path: /mnt/ffbuild/cache/sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Drop older compiler caches
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:
@@ -151,6 +195,13 @@ jobs:
           brew install --quiet rsync xz
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /Volumes/ffbuild/ffbuild/cache/sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ runner.os }}-
+
       - name: Fetch Firefox, toolchains, patches
         run: |
           scripts/fetch.sh
@@ -158,7 +209,35 @@ jobs:
           scripts/apply.sh
 
       - name: Build
+        id: build
+        # Fails before the job's limit, so the compiler cache is still saved.
+        timeout-minutes: 320
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
         run: OPZ_BUILD=full scripts/build.sh
+
+      # Also after a failed or timed-out build: the next run resumes from it.
+      # Not from tag runs (their cache is only visible to that tag).
+      - name: Stop compiler cache
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
+        run: .github/ci-sccache.sh stop
+
+      - name: Save compiler cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        uses: actions/cache/save@v4
+        with:
+          path: /Volumes/ffbuild/ffbuild/cache/sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Drop older compiler caches
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:
@@ -243,6 +322,13 @@ jobs:
           echo "PATH_APPEND=$(cygpath -u "$OPENSSL_DIR_FOR_OPZ")" >> "$GITHUB_ENV"
           uname -a; python3 --version; openssl version; command -v xz rsync || true
 
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\ffbuild\cache\sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ runner.os }}-
+
       - name: Fetch Firefox, toolchains, patches
         run: |
           export PATH="$PATH:$PATH_APPEND"
@@ -251,9 +337,39 @@ jobs:
           scripts/apply.sh
 
       - name: Build
+        id: build
+        # Fails before the job's limit, so the compiler cache is still saved.
+        timeout-minutes: 320
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
         run: |
           export PATH="$PATH:$PATH_APPEND"
           OPZ_BUILD=full scripts/build.sh
+
+      # Also after a failed or timed-out build: the next run resumes from it.
+      # Not from tag runs (their cache is only visible to that tag).
+      - name: Stop compiler cache
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
+        env:
+          SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
+        run: |
+          export PATH="$PATH:$PATH_APPEND"
+          .github/ci-sccache.sh stop
+
+      - name: Save compiler cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        uses: actions/cache/save@v4
+        with:
+          path: C:\ffbuild\cache\sccache
+          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Drop older compiler caches
+        continue-on-error: true
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:

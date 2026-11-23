@@ -11,9 +11,8 @@ ac_add_options --disable-debug
 ac_add_options --disable-tests
 # Compiler cache ($SCCACHE_DIR on the build drive, see env.sh): rebuilds after
 # a small change or a Firefox update only recompile what changed.
-# OPZ_NO_SCCACHE=1 (set by the GitHub Actions release): every runner starts
-# empty, so the cache gains nothing there, and its server died mid-build on
-# the Windows runner ("sccache: encountered fatal error").
+# OPZ_NO_SCCACHE=1 builds without it (the GitHub Actions release keeps the
+# cache in the Actions cache, .github/ci-sccache.sh).
 if [ -z "${OPZ_NO_SCCACHE:-}" ]; then
     ac_add_options --with-ccache=sccache
 fi
