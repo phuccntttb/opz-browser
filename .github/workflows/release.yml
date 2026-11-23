@@ -56,6 +56,10 @@ env:
   SCCACHE_IDLE_TIMEOUT: '0'
   SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
   SCCACHE_LOG: warn
+  # Classic server mode, as Mozilla's own CI uses (outside it Firefox defaults
+  # to client-side mode, which failed on Windows at gkrust-shared with
+  # "sccache: encountered fatal error").
+  SCCACHE_CLIENT_SIDE: 'false'
   # rrsync on the server maps "/" to /srv/opz/updates (see scripts/ci-secrets.sh).
   OPZ_UPDATE_PUBLISH: ubuntu@51.79.223.48:/
   DEPLOY_KNOWN_HOSTS: 51.79.223.48 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID1/G7CfViHBi6KIFdaRsBCC9J9aOJnGBISN5MlG1u1p
