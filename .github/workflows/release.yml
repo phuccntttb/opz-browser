@@ -35,9 +35,11 @@ on:
 permissions:
   contents: read
 
-# One release at a time; never cancel a run that may be publishing.
+# One run at a time per platform choice, so a manual Linux run does not wait
+# hours behind a Windows one (each platform publishes to its own update
+# directory). Never cancel a run that may be publishing.
 concurrency:
-  group: release
+  group: release-${{ github.event_name == 'push' && 'all' || inputs.platforms }}
   cancel-in-progress: false
 
 env:
