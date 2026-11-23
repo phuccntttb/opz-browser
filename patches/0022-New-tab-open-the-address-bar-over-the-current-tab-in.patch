@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 18:44:57 +0700
+Subject: [PATCH] New tab: open the address bar over the current tab instead of
+ an empty tab
+
+---
+ browser/base/content/browser-commands.js         | 16 ++++++++++++++++
+ .../urlbar/content/UrlbarChildController.mjs     |  3 +++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/browser/base/content/browser-commands.js b/browser/base/content/browser-commands.js
+index 757c5b1661..5ce9b95352 100644
+--- a/browser/base/content/browser-commands.js
++++ b/browser/base/content/browser-commands.js
+@@ -252,6 +252,22 @@ var BrowserCommands = {
+       }
+     }
+ 
++    // Opz: no empty tab. The address bar opens over the current tab and
++    // whatever is picked opens in a new tab; Escape leaves nothing behind.
++    if (!werePassedURL && !searchClipboard && where == "tab") {
++      gURLBar.opzOpenInNewTab = true;
++      gURLBar.inputField.addEventListener(
++        "blur",
++        () =>
++          setTimeout(() => {
++            gURLBar.opzOpenInNewTab = false;
++          }, 0),
++        { once: true }
++      );
++      gURLBar.search("");
++      return;
++    }
++
+     // A notification intended to be useful for modular peformance tracking
+     // starting as close as is reasonably possible to the time when the user
+     // expressed the intent to open a new tab.  Since there are a lot of
+diff --git a/browser/components/urlbar/content/UrlbarChildController.mjs b/browser/components/urlbar/content/UrlbarChildController.mjs
+index a04f963921..9ec7cc7dc9 100644
+--- a/browser/components/urlbar/content/UrlbarChildController.mjs
++++ b/browser/components/urlbar/content/UrlbarChildController.mjs
+@@ -813,6 +813,9 @@ export class UrlbarChildController {
+     } else {
+       where = UrlbarContentUtils.whereToOpenLink(event);
+     }
++    if (this.#input.opzOpenInNewTab && where == "current") {
++      where = "tab";
++    }
+     let openInTabPref =
+       this.#input.sapName == "searchbar"
+         ? UrlbarPrefs.get("browser.search.openintab")

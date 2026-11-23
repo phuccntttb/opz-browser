@@ -1,0 +1,386 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 16:14:23 +0700
+Subject: [PATCH] Tabs: a shorter tab context menu with an icon row and rounded
+ style
+
+The everyday actions (reload, mute, pin, duplicate, bookmark) are a row
+of icons at the top. Select All Tabs moves into the Move Tab submenu and
+Close Duplicate Tabs into Close Multiple Tabs. Actions that can't be used
+now are hidden instead of greyed out. The menu and its submenus get
+rounded corners, roomier items and a soft hover highlight.
+
+Right-clicking the empty part of the vertical tab column opens the menu
+for the selected tab.
+---
+ browser/components/sidebar/sidebar-main.mjs   |  29 +++
+ .../tabbrowser/content/tab-context-menu.js    | 182 +++++++++++++++++-
+ browser/themes/shared/contextmenu.css         |  97 ++++++++++
+ 3 files changed, 305 insertions(+), 3 deletions(-)
+
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index 6b06774b58..e217d23601 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -331,6 +331,31 @@ export default class SidebarMain extends MozLitElement {
+     }
+   }
+ 
++  opzOpenTabMenuOnEmptyArea(event) {
++    if (
++      !window.SidebarController.sidebarVerticalTabsEnabled ||
++      event.defaultPrevented
++    ) {
++      return false;
++    }
++    let onControl = event
++      .composedPath()
++      .some(node =>
++        node.matches?.(
++          "tab, tab-group, button, toolbarbutton, moz-button, input, a[href]"
++        )
++      );
++    if (onControl) {
++      return false;
++    }
++    event.preventDefault();
++    window.gBrowser.translateTabContextMenu();
++    document
++      .getElementById("tabContextMenu")
++      .openPopupAtScreen(event.screenX, event.screenY, true, event);
++    return true;
++  }
++
+   async onSidebarPopupShowing(event) {
+     // Store the context menu target which holds the id required for managing sidebar items
+     let targetHost = event.explicitOriginalTarget.getRootNode().host;
+@@ -595,6 +620,10 @@ export default class SidebarMain extends MozLitElement {
+         }
+         break;
+       case "contextmenu":
++        // Opz: the empty part of the tab column opens the selected tab's menu.
++        if (this.opzOpenTabMenuOnEmptyArea(e)) {
++          break;
++        }
+         if (
+           !["tabs-newtab-button", "vertical-tabs-newtab-button"].includes(
+             e.target.id
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index 2c8588c2e8..3dbd23bfec 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -339,6 +339,145 @@ var TabContextMenu = {
+         },
+       ],
+     },
++    /*
++     * Opz: the everyday actions are an icon row at the top, Select All Tabs and
++     * Close Duplicate Tabs move into the Move Tab and Close Multiple Tabs
++     * submenus.
++     */
++    opz: {
++      tabContextMenu: [
++        {
++          name: "actions-row",
++          items: ["#opz_context_tabActions", "#context_openAndOrganizeSeparator"],
++        },
++        {
++          name: "open-and-organize",
++          items: [
++            "#context_openANewTab",
++            [
++              "#context_moveTabToNewGroup",
++              "#context_moveSplitViewToNewGroup",
++              "#context_moveTabToGroup",
++              "#context_ungroupTab",
++              "#context_ungroupSplitView",
++            ],
++            [
++              "#context_moveTabToSplitView",
++              "#context_separateSplitView",
++              "#context_reverseSplitView",
++            ],
++            "#context_reopenInContainer",
++            "#context_tabStateSeparator",
++          ],
++        },
++        {
++          name: "ai",
++          items: [
++            "#context_askChat",
++            "#context_aiSeparator",
++            "#context_askChatSummarize",
++            "#context_createAITab",
++          ],
++        },
++        {
++          name: "tab-tools",
++          items: [
++            ["#context_playTab", "#context_playSelectedTabs"],
++            "#context_unloadTab",
++            ["#context_addNote", "#context_editNote"],
++            "#context_moveTabOptions",
++            { selector: ".share-tab-url-item", optional: true },
++            "#context_tabToolsSeparator",
++          ],
++        },
++        {
++          name: "sending-items",
++          items: [
++            "#context_shareSelectedTabs",
++            "#context_shareSelectedTabsSeparator",
++            "#context_sendTabToDevice",
++            "#context_sendTabToDeviceSeparator",
++          ],
++        },
++        {
++          name: "close",
++          items: [
++            "#context_closeTab",
++            "#context_closeTabOptions",
++            "#context_undoCloseTab",
++          ],
++        },
++        {
++          name: "fullscreen",
++          items: [
++            "#context_fullscreenSeparator",
++            "#context_fullscreenAutohide",
++            "#context_fullscreenExit",
++          ],
++        },
++        {
++          name: "extensions",
++          open: true,
++          items: [],
++        },
++      ],
++      opz_context_tabActions: [
++        {
++          name: "actions",
++          items: [
++            ["#context_reloadTab", "#context_reloadSelectedTabs"],
++            ["#context_toggleMuteTab", "#context_toggleMuteSelectedTabs"],
++            [
++              "#context_pinTab",
++              "#context_unpinTab",
++              "#context_pinSelectedTabs",
++              "#context_unpinSelectedTabs",
++            ],
++            ["#context_duplicateTab", "#context_duplicateTabs"],
++            ["#context_bookmarkSelectedTabs", "#context_bookmarkTab"],
++          ],
++        },
++      ],
++      moveTabOptionsMenu: [
++        {
++          name: "positions",
++          items: [
++            "#context_moveToStart",
++            "#context_moveToEnd",
++            "#context_openTabInWindow",
++            "#context_openTabInMiniWindow",
++            "#moveTabSeparator",
++            "#context_moveTabToGroupSeparator",
++          ],
++        },
++        {
++          name: "select-all",
++          items: ["#context_selectAllSeparator", "#context_selectAllTabs"],
++        },
++      ],
++      context_moveTabToGroupPopupMenu: [
++        {
++          name: "groups",
++          items: [
++            "#context_moveTabToGroupNewGroup",
++            "#open-tab-groups-separator-upper",
++            "#open-tab-groups-separator-lower",
++            "#context_moveTabToSavedGroup",
++          ],
++        },
++      ],
++      closeTabOptions: [
++        {
++          name: "close-multiple",
++          items: [
++            "#context_closeTabsToTheStart",
++            "#context_closeTabsToTheEnd",
++            "#context_closeOtherTabs",
++            "#context_closeDuplicateTabs",
++          ],
++        },
++      ],
++    },
+   },
+ 
+   /* Runtime-inserted menu items, exempt from the layout's coverage check. */
+@@ -372,9 +511,9 @@ var TabContextMenu = {
+      * Reading the pref selects the structure and arms the observer that resets
+      * _tabContextMenuArranged when the pref changes.
+      */
+-    let layout =
+-      (this._altTabContextMenu && this.MENU_SECTIONS.altstructure) ||
+-      this.MENU_SECTIONS.classic;
++    // Opz: always the Opz layout, with its icon row.
++    let layout = this.MENU_SECTIONS.opz;
++    this._opzEnsureActionsRow(aPopupMenu);
+     // MenuSectionLayout throws if the markup and layout disagree and a menuitem is unaccounted for.
+     // Catch these exceptions and log them out.
+     try {
+@@ -389,6 +528,40 @@ var TabContextMenu = {
+     this._tabContextMenuArranged = true;
+   },
+ 
++  /*
++   * Opz: the row of icon-only actions at the top of the menu. The items keep
++   * their labels for screen readers; the label is mirrored to the tooltip,
++   * again whenever Fluent drops the tooltip while applying a translation.
++   */
++  _opzEnsureActionsRow(aPopupMenu) {
++    if (document.getElementById("opz_context_tabActions")) {
++      return;
++    }
++    let row = document.createXULElement("menugroup");
++    row.id = "opz_context_tabActions";
++    aPopupMenu.prepend(row);
++    let syncTooltip = item => {
++      let label = item.getAttribute("label");
++      if (label && item.getAttribute("tooltiptext") != label) {
++        item.setAttribute("tooltiptext", label);
++      }
++    };
++    new MutationObserver(records => {
++      for (let { target, addedNodes } of records) {
++        for (let item of [target, ...addedNodes]) {
++          if (item.localName == "menuitem") {
++            item.classList.add("menuitem-iconic");
++            syncTooltip(item);
++          }
++        }
++      }
++    }).observe(row, {
++      childList: true,
++      subtree: true,
++      attributeFilter: ["label", "tooltiptext"],
++    });
++  },
++
+   /*
+    * Swap in alternate Fluent ids for items that need different wording in the
+    * alt layout. We cache the authored id so a pref toggle back to classic can
+@@ -1092,6 +1265,9 @@ var TabContextMenu = {
+         .setAttribute("data-l10n-id", "tab-context-send-to-device2");
+     }
+ 
++    // Opz: Select All Tabs lives in the Move Tab submenu.
++    document.getElementById("context_selectAllSeparator").hidden = false;
++
+     let reopenInContainer = document.getElementById(
+       "context_reopenInContainer"
+     );
+diff --git a/browser/themes/shared/contextmenu.css b/browser/themes/shared/contextmenu.css
+index fdf95241bc..7d5aae4a0a 100644
+--- a/browser/themes/shared/contextmenu.css
++++ b/browser/themes/shared/contextmenu.css
+@@ -57,3 +57,100 @@
+ #context-media-eme-learnmore {
+   --menuitem-icon: url("chrome://browser/skin/drm-icon.svg");
+ }
++
++/* Opz: the tab context menu, with an icon row for the everyday actions. */
++
++#tabContextMenu,
++#tabContextMenu menupopup {
++  --panel-border-radius: 12px;
++  --panel-padding-block: 6px;
++  --menuitem-border-radius: 7px;
++  --menuitem-padding-block: 0.36em;
++  --menuitem-padding-inline: 0.8em;
++
++  menu,
++  menuitem {
++    &:where([_moz-menuactive]:not([disabled])) {
++      color: inherit;
++      background-color: color-mix(in srgb, currentColor 11%, transparent);
++    }
++  }
++
++  menuseparator {
++    padding-block: 5px;
++    padding-inline: 0.8em;
++  }
++}
++
++#tabContextMenu {
++  min-width: 15em;
++
++  /* An action that can't be used now only takes room. */
++  > :is(menu, menuitem)[disabled] {
++    display: none;
++  }
++
++  #context_closeTab[_moz-menuactive] {
++    color: light-dark(#c8102e, #ff8589);
++    background-color: color-mix(in srgb, currentColor 13%, transparent);
++  }
++}
++
++#opz_context_tabActions {
++  gap: 2px;
++
++  > .menuitem-iconic {
++    flex: 1;
++    justify-content: center;
++    align-items: center;
++    margin: 0;
++    padding: 0;
++
++    > .menu-text,
++    > .menu-accel {
++      display: none;
++    }
++
++    > .menu-icon {
++      width: auto;
++      height: auto;
++      padding: 8px;
++      margin: 0;
++    }
++  }
++}
++
++#context_reloadTab,
++#context_reloadSelectedTabs {
++  --menuitem-icon: url("chrome://global/skin/icons/reload.svg");
++}
++
++#context_toggleMuteTab,
++#context_toggleMuteSelectedTabs {
++  --menuitem-icon: url("chrome://global/skin/media/audio-muted.svg");
++  &[muted] {
++    --menuitem-icon: url("chrome://global/skin/media/audio.svg");
++  }
++}
++
++#context_pinTab,
++#context_unpinTab,
++#context_pinSelectedTabs,
++#context_unpinSelectedTabs {
++  --menuitem-icon: url("chrome://browser/skin/pin.svg");
++}
++
++#context_unpinTab,
++#context_unpinSelectedTabs {
++  color: AccentColor;
++}
++
++#context_duplicateTab,
++#context_duplicateTabs {
++  --menuitem-icon: url("chrome://global/skin/icons/edit-copy.svg");
++}
++
++#context_bookmarkTab,
++#context_bookmarkSelectedTabs {
++  --menuitem-icon: url("chrome://browser/skin/bookmark-hollow.svg");
++}

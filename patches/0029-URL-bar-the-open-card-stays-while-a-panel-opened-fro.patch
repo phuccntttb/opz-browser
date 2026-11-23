@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 19:53:08 +0700
+Subject: [PATCH] URL bar: the open card stays while a panel opened from its
+ icons is showing
+
+---
+ browser/base/content/browser-init.js | 19 ++++++++++++++++---
+ browser/themes/shared/urlbar.css     | 14 +++++++-------
+ 2 files changed, 23 insertions(+), 10 deletions(-)
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index efb04e99f0..a483f190e8 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -419,13 +419,26 @@ var gBrowserInit = {
+     window.addEventListener(
+       "mousedown",
+       event => {
+-        // The icons on the card's sides keep the focus where it is, or the
+-        // card would collapse under the pointer before the click lands.
++        // The icons on the card's sides take the focus when pressed, which
++        // would collapse the card under the pointer before the click lands.
+         if (
+           gURLBar.focused &&
+           event.target.closest?.("#identity-box, #page-action-buttons")
+         ) {
+-          event.preventDefault();
++          // The panel an icon opens takes the focus, which would collapse the
++          // card and pull the panel's anchor out from under it. Keep the card
++          // as it is until the panel is gone.
++          gURLBar.setAttribute("opz-keepopen", "");
++          let release = () => {
++            gURLBar.removeAttribute("opz-keepopen");
++            window.removeEventListener("popuphidden", release, true);
++          };
++          window.addEventListener("popuphidden", release, true);
++          setTimeout(() => {
++            if (!document.querySelector("panel[panelopen]")) {
++              release();
++            }
++          }, 600);
+           return;
+         }
+         if (
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 12de631dfd..bbaa98972f 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1652,7 +1652,7 @@ toolbar[inactive="true"] .urlbar,
+  * the toolbar, sits in the middle of it and has no background. It grows back to the full width
+  * as soon as it is focused, so typing and the results list keep their room. */
+ /* [context-focus]: focused only by a right click, for the context menu. */
+-#urlbar:not([open], [popover-open], [usertyping], [searchmode]):is(:not([focused]), [context-focus]) {
++#urlbar:not([open], [popover-open], [usertyping], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
+   flex: 0 1 auto;
+   margin-inline: auto;
+ 
+@@ -1721,7 +1721,7 @@ toolbar[inactive="true"] .urlbar,
+  * card, with its results under it, over a dimmed window. Clicks on the dimmed
+  * area go through to what is under it, which blurs the bar and closes it. */
+ :root:not([customizing]) {
+-  #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode]) {
++  #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
+     --urlbar-height: 44px;
+     --urlbar-background-overhang-open: 8px;
+     /* These are worked out on :root from the values there, so they are
+@@ -1757,7 +1757,7 @@ toolbar[inactive="true"] .urlbar,
+     }
+   }
+ 
+-  #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode])) {
++  #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) {
+     z-index: 10;
+ 
+     /* The bar's own shadow dims the window, so it paints under the bar and
+@@ -1779,7 +1779,7 @@ toolbar[inactive="true"] .urlbar,
+   display: none;
+ }
+ 
+-:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode])) > #opz-urlbar-scrim {
++:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) > #opz-urlbar-scrim {
+   display: block;
+   position: fixed;
+   inset: 0;
+@@ -1792,7 +1792,7 @@ toolbar[inactive="true"] .urlbar,
+   transition: filter 180ms ease-out;
+ }
+ 
+-:root:not([customizing]):has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
++:root:not([customizing]):has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
+   filter: blur(10px);
+ }
+ 
+@@ -1805,7 +1805,7 @@ toolbar[inactive="true"] .urlbar,
+ /* The card, its dimming shadow and its results fade in. While a New Tab waits
+  * for its results the card is hidden and has no animation, which starts when
+  * it is shown. */
+-:root:not([customizing]) #navigator-toolbox #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode]) {
++:root:not([customizing]) #navigator-toolbox #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
+   animation: opz-urlbar-in 180ms ease-out;
+ 
+   @media (prefers-reduced-motion) {
+@@ -1833,7 +1833,7 @@ toolbar[inactive="true"] .urlbar,
+  * information / permissions on the left, page actions on the right) are
+  * invisible until the pointer is over the toolbar. They keep their place, so nothing
+  * shifts when they appear. Once the bar is in use they are always shown. */
+-:root:not([customizing]) #urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode]) {
++:root:not([customizing]) #urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
+   & #identity-box,
+   & #page-action-buttons {
+     opacity: 0;

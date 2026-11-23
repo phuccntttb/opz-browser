@@ -1,0 +1,30 @@
+# Opz Browser mozconfig — artifact build: prebuilt C++/Rust from Mozilla CI
+# (exact same revision), JS/CSS/HTML/prefs/branding are built locally.
+ac_add_options --enable-project=browser
+ac_add_options --enable-artifact-builds
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-artifact
+
+# --- Branding ---------------------------------------------------------------
+# browser/branding/opz is a symlink to <repo>/branding/opz (scripts/apply.sh).
+ac_add_options --with-branding=browser/branding/opz
+# application.ini [App] Name. On Linux, Vendor/Name pick the profile root:
+# ~/.config/mozilla/opz (Firefox uses ~/.config/mozilla/firefox), so Opz never
+# touches Firefox profiles. Vendor stays "Mozilla": MOZ_APP_VENDOR can only be
+# implied by browser/moz.configure, not set from a mozconfig.
+ac_add_options --with-app-basename=Opz
+# Window class / Wayland app_id and the remote-control name. Must differ from
+# "firefox" so links are not handed to a running Firefox.
+ac_add_options MOZ_APP_REMOTINGNAME=opz
+# Package file name: opz-<version>.<locale>.linux-x86_64.tar.xz
+ac_add_options MOZ_PKG_APPNAME=opz
+# The binary name must stay "firefox" in artifact builds: the artifact code
+# looks for the "firefox/" directory inside Mozilla's CI tarball by
+# MOZ_APP_NAME (python/mozbuild/mozbuild/artifacts.py, process_package_artifact),
+# and MOZ_APP_NAME would otherwise default to lower(basename) = "opz".
+ac_add_options --with-app-name=firefox
+
+# Milestone 4: no Mozilla crash reports (would be sent as Firefox to
+# crash-reports.mozilla.com) and no updater (application.ini would point it at
+# Firefox's update server). Opz updates by installing a new tarball.
+ac_add_options --disable-crashreporter
+ac_add_options --disable-updater

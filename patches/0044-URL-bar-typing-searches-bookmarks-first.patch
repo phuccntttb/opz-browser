@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 20 Nov 2026 14:42:25 +0700
+Subject: [PATCH] URL bar: typing searches bookmarks first
+
+---
+ .../urlbar/content/UrlbarInputBase.mjs        | 36 +++++++++++++++++++
+ browser/themes/shared/urlbar.css              |  5 +++
+ 2 files changed, 41 insertions(+)
+
+diff --git a/browser/components/urlbar/content/UrlbarInputBase.mjs b/browser/components/urlbar/content/UrlbarInputBase.mjs
+index fe763d41b4..969107d2bf 100644
+--- a/browser/components/urlbar/content/UrlbarInputBase.mjs
++++ b/browser/components/urlbar/content/UrlbarInputBase.mjs
+@@ -319,6 +319,7 @@ ${
+   // async keyup can tell whether a fresh search has started since.
+   #inputEpoch = 0;
+   #navigating = false;
++  #opzBookmarksModeEntered = false;
+ 
+   valueIsTyped = false;
+ 
+@@ -1564,6 +1565,17 @@ ${
+       return;
+     }
+ 
++    // Opz: the Bookmarks mode entered by typing (see _on_input) doesn't keep
++    // Enter from loading or searching what was typed.
++    if (
++      this.#opzBookmarksModeEntered &&
++      this.searchMode?.source == UrlbarShared.RESULT_SOURCE.BOOKMARKS &&
++      !result &&
++      !oneOffParams
++    ) {
++      this.searchMode = null;
++    }
++
+     // When the user hits enter in a local search mode and there's no selected
+     // result or one-off, don't do anything.
+     if (
+@@ -2906,6 +2918,13 @@ ${
+    *   Pass the selected browser for the searchbar.
+    */
+   async setSearchMode(searchMode, browser) {
++    if (
++      searchMode?.source != UrlbarShared.RESULT_SOURCE.BOOKMARKS ||
++      searchMode.engineName ||
++      (searchMode.entry ?? "other") != "other"
++    ) {
++      this.removeAttribute("opz-bookmarks-auto");
++    }
+     let currentSearchMode = this.getSearchMode(browser);
+     let areSearchModesSame =
+       (!currentSearchMode && !searchMode) ||
+@@ -5241,6 +5260,7 @@ ${
+     this._isHandoffSession = false;
+     this.removeAttribute("focused");
+     this.removeAttribute("context-focus");
++    this.#opzBookmarksModeEntered = false;
+     // Reset this, so that it doesn't cause issues with different tests
+     // when they focus and select the address bar.
+     this.#preventClickSelectsAll = false;
+@@ -5662,6 +5682,22 @@ ${
+       !UrlbarShared.isPasteEvent(event) &&
+       this._maybeAutofillPlaceholder(value);
+ 
++    // Opz: typing into the address bar searches bookmarks first, without a
++    // chip. Backspace in the empty bar leaves it until the bar is left.
++    if (
++      this.#isAddressbar &&
++      value &&
++      !this.searchMode &&
++      !this.#opzBookmarksModeEntered
++    ) {
++      this.#opzBookmarksModeEntered = true;
++      this.searchMode = {
++        source: UrlbarShared.RESULT_SOURCE.BOOKMARKS,
++        isPreview: false,
++      };
++      this.toggleAttribute("opz-bookmarks-auto", !!this.searchMode);
++    }
++
+     this.startQuery({
+       searchString: value,
+       allowAutofill,
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index e8429fbc4c..7a2d4c8883 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1868,3 +1868,8 @@ toolbar[inactive="true"] .urlbar,
+ #identity-icon-label {
+   white-space: nowrap;
+ }
++
++/* Opz: the Bookmarks mode that typing enters has no chip. */
++#urlbar[opz-bookmarks-auto] > .urlbar-input-container > #urlbar-search-mode-indicator {
++  display: none;
++}

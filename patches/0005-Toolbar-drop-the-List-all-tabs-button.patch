@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sat, 7 Nov 2026 19:06:00 +0700
+Subject: [PATCH] Toolbar: drop the List all tabs button
+
+Removed from the default tab strip and vertical-tabs nav-bar layouts, and taken out of existing profiles once (opz.customizableui.allTabsButtonRemoved). Users can add it back from Customize Toolbar.
+---
+ .../customizableui/CustomizableUI.sys.mjs     | 40 ++++++++++++++++++-
+ 1 file changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
+index 76cab7f8e4..6875e44139 100644
+--- a/browser/components/customizableui/CustomizableUI.sys.mjs
++++ b/browser/components/customizableui/CustomizableUI.sys.mjs
+@@ -70,6 +70,10 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
+  */
+ var kVersion = 28;
+ 
++// Opz: set once the "List all tabs" button was taken out of a profile.
++const kPrefOpzAllTabsButtonRemoved =
++  "opz.customizableui.allTabsButtonRemovedV2";
++
+ /**
+  * Buttons removed from built-ins by version they were removed. kVersion must be
+  * bumped any time a new id is added to this. Use the button id as key, and
+@@ -382,8 +386,8 @@ var CustomizableUIInternal = {
+         type: CustomizableUI.TYPE_TOOLBAR,
+         overflowable: true,
+         defaultPlacements: navbarPlacements,
++        // Opz: no "List all tabs" button by default.
+         verticalTabsDefaultPlacements: [
+-          "alltabs-button",
+           "smartwindow-group-tabs-button",
+           "ai-window-toggle",
+         ],
+@@ -412,7 +416,7 @@ var CustomizableUIInternal = {
+           "tabbrowser-tabs",
+           "new-tab-button",
+           "spring",
+-          "alltabs-button",
++          // Opz: no "List all tabs" button by default.
+           "smartwindow-group-tabs-button",
+           "ai-window-toggle",
+         ],
+@@ -533,6 +537,8 @@ var CustomizableUIInternal = {
+     // We should still enter even if gSavedState.currentVersion >= kVersion
+     // because the per-widget pref facility is independent of versioning.
+     if (!gSavedState) {
++      // Opz: new profiles never had the "List all tabs" button.
++      Services.prefs.setBoolPref(kPrefOpzAllTabsButtonRemoved, true);
+       // Flip all the prefs so we don't try to re-introduce later:
+       for (let [, widget] of gPalette) {
+         if (widget.defaultArea && widget._introducedInVersion === "pref") {
+@@ -1045,6 +1051,36 @@ var CustomizableUIInternal = {
+         CustomizableUIInternal.saveHorizontalTabStripState(horizontalSnapshot);
+       }
+     }
++
++    // Opz: take the "List all tabs" button out of older profiles, once. Users
++    // who want it back can add it again from Customize Toolbar.
++    if (!Services.prefs.getBoolPref(kPrefOpzAllTabsButtonRemoved, false)) {
++      for (let placements of Object.values(gSavedState.placements || {})) {
++        if (Array.isArray(placements)) {
++          let index = placements.indexOf("alltabs-button");
++          if (index != -1) {
++            placements.splice(index, 1);
++          }
++        }
++      }
++      // The layouts saved for the other tab orientation would bring it back
++      // when the user switches between vertical and horizontal tabs.
++      let horizontalSnapshot =
++        CustomizableUIInternal.getSavedHorizontalSnapshotState();
++      if (horizontalSnapshot.includes("alltabs-button")) {
++        CustomizableUIInternal.saveHorizontalTabStripState(
++          horizontalSnapshot.filter(id => id != "alltabs-button")
++        );
++      }
++      let verticalSnapshot =
++        CustomizableUIInternal.getSavedVerticalSnapshotState();
++      if (verticalSnapshot.includes("alltabs-button")) {
++        CustomizableUIInternal.saveNavBarWhenVerticalTabsState(
++          verticalSnapshot.filter(id => id != "alltabs-button")
++        );
++      }
++      Services.prefs.setBoolPref(kPrefOpzAllTabsButtonRemoved, true);
++    }
+   },
+ 
+   /**

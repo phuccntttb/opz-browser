@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Mon, 9 Nov 2026 17:39:28 +0700
+Subject: [PATCH] URL bar: float in the middle of the window while in use, over
+ a dimmed window
+
+---
+ .../components/urlbar/content/UrlbarView.mjs  |  3 +-
+ browser/themes/shared/urlbar.css              | 58 +++++++++++++++++++
+ 2 files changed, 60 insertions(+), 1 deletion(-)
+
+diff --git a/browser/components/urlbar/content/UrlbarView.mjs b/browser/components/urlbar/content/UrlbarView.mjs
+index 625b58d963..b6884a52be 100644
+--- a/browser/components/urlbar/content/UrlbarView.mjs
++++ b/browser/components/urlbar/content/UrlbarView.mjs
+@@ -4103,7 +4103,8 @@ export class UrlbarView {
+   }
+ 
+   #enableOrDisableRowWrap() {
+-    let wrap = getBoundsWithoutFlushing(this.input).width < 650;
++    // Opz: flushes, since the bar only takes its open width as it opens.
++    let wrap = this.input.getBoundingClientRect().width < 650;
+     this.#rows.toggleAttribute("wrap", wrap);
+     this.oneOffSearchButtons?.container.toggleAttribute("wrap", wrap);
+   }
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 4918ed5f12..b94bebc45b 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1715,3 +1715,61 @@ toolbar[inactive="true"] .urlbar,
+ :root[uidensity] {
+   --urlbar-container-padding-block: 0px;
+ }
++
++/* Opz: while in use, the address bar floats in the middle of the window as a
++ * card, with its results under it, over a dimmed window. Clicks on the dimmed
++ * area go through to what is under it, which blurs the bar and closes it. */
++:root:not([customizing]) {
++  #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode]) {
++    --urlbar-height: 44px;
++    --urlbar-background-overhang-open: 8px;
++    /* These are worked out on :root from the values there, so they are
++       restated here to follow the two above. Without them the results reach
++       past the input by :root's overhang (0px), not this one, and are
++       narrower than the input above them. */
++    --urlbar-background-border-top-radius-open: calc(
++      min(var(--urlbar-background-border-radius), var(--urlbar-height) / 2) + var(--urlbar-background-overhang-open)
++    );
++    --urlbarview-joint-background-outset-inline: calc(var(--urlbar-background-overhang-open) + var(--urlbarview-margin-inline));
++    --urlbarview-joint-background-outset-block: calc(var(--urlbar-background-overhang-open) + var(--urlbarview-margin-block));
++    position: fixed;
++    /* Not translate: the results anchor to the bar, and anchoring ignores
++       transforms. */
++    inset: 22vh 0 auto;
++    translate: none;
++    width: min(720px, 100vw - 64px);
++    max-width: none;
++    margin-block: 0;
++    margin-inline: auto;
++    font-size: 1.1em;
++
++    > .urlbar-input-container {
++      outline: none;
++    }
++
++    > .urlbar-background {
++      border-color: transparent;
++    }
++
++    > .urlbarView > .urlbarView-results {
++      border-top: 1px solid var(--border-color-deemphasized);
++    }
++  }
++
++  #navigator-toolbox:has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode])) {
++    z-index: 10;
++
++    /* The bar's own shadow dims the window, so it paints under the bar and
++       over the toolbar, and lets clicks through. */
++    #urlbar {
++      z-index: 1;
++      box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.25);
++      border-radius: var(--urlbar-background-border-radius);
++
++      &[popover-open] {
++        border-end-start-radius: 0;
++        border-end-end-radius: 0;
++      }
++    }
++  }
++}

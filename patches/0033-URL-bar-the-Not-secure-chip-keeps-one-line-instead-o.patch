@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 18 Nov 2026 16:31:33 +0700
+Subject: [PATCH] URL bar: the Not secure chip keeps one line instead of
+ wrapping
+
+---
+ browser/themes/shared/urlbar.css | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index fbcb88f033..e8429fbc4c 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1855,3 +1855,16 @@ toolbar[inactive="true"] .urlbar,
+     opacity: 1;
+   }
+ }
++
++/* Opz: the idle bar is capped in width, so a long address squeezes its
++ * neighbours. The "Not secure" chip must keep its size and one line; only the
++ * address shrinks. */
++#trust-icon-container,
++#identity-box {
++  flex-shrink: 0;
++}
++
++#trust-label,
++#identity-icon-label {
++  white-space: nowrap;
++}

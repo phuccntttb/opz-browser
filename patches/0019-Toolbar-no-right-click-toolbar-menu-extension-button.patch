@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 15:22:04 +0700
+Subject: [PATCH] Toolbar: no right-click toolbar menu (extension buttons keep
+ theirs)
+
+---
+ browser/base/content/main-popupset.js | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index e06d8cccd5..5a60f8415d 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -652,6 +652,15 @@ document.addEventListener(
+           CreateContainerTabMenu(event);
+           break;
+         case "toolbar-context-menu":
++          // Opz: no toolbar context menu, except for extension buttons.
++          if (
++            !event.target.triggerNode?.closest?.(
++              ".webextension-browser-action, .unified-extensions-item, #unified-extensions-button"
++            )
++          ) {
++            event.preventDefault();
++            break;
++          }
+           ToolbarContextMenu.onViewToolbarsPopupShowing(
+             event,
+             document.getElementById("viewToolbarsMenuSeparator")

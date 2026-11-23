@@ -1,0 +1,921 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Mon, 9 Nov 2026 11:24:15 +0700
+Subject: [PATCH] Welcome: full-window first-run welcome screen
+
+Shown once per profile (opz.welcome.shown) from a BrowserGlue startup idle task, as a chrome iframe covering the whole first browser window. An animated intro leads to a card with steps: import from another browser, default search engine, block ads (installs uBlock Origin from addons.mozilla.org), default browser, done. The ads step is left out when uBlock Origin is installed, the default-browser step when Opz already is the default or policies forbid it. BrowserGlue applies the choices after the screen closes.
+---
+ browser/base/content/browser-init.js         |  99 +++++
+ browser/base/content/opz/welcome.css         | 377 +++++++++++++++++++
+ browser/base/content/opz/welcome.mjs         | 265 +++++++++++++
+ browser/base/content/opz/welcome.xhtml       |  47 +++
+ browser/base/jar.mn                          |   3 +
+ browser/components/BrowserGlue.sys.mjs       |   6 +
+ browser/locales/en-US/browser/opzWelcome.ftl |  40 ++
+ 7 files changed, 837 insertions(+)
+ create mode 100644 browser/base/content/opz/welcome.css
+ create mode 100644 browser/base/content/opz/welcome.mjs
+ create mode 100644 browser/base/content/opz/welcome.xhtml
+ create mode 100644 browser/locales/en-US/browser/opzWelcome.ftl
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index d1e5aa5145..704f579a92 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -111,6 +111,7 @@ var gBrowserInit = {
+ 
+   onBeforeInitialXULLayout() {
+     this._setupFirstContentWindowPaintPromise();
++    this._maybeShowOpzWelcome();
+ 
+     if (!window.toolbar.visible) {
+       document.documentElement.setAttribute("popup-window", true);
+@@ -234,6 +235,104 @@ var gBrowserInit = {
+     );
+   },
+ 
++  // Covers the first window of a new profile with the welcome screen before
++  // it is painted, then applies what the user picked.
++  async _maybeShowOpzWelcome() {
++    const shownPref = "opz.welcome.shown";
++    if (
++      Services.prefs.getBoolPref(shownPref, false) ||
++      Cu.isInAutomation ||
++      !window.toolbar.visible ||
++      PrivateBrowsingUtils.isWindowPrivate(window)
++    ) {
++      return;
++    }
++    Services.prefs.setBoolPref(shownPref, true);
++
++    const adBlockerId = "uBlock0@raymondhill.net";
++    const adBlockerURL =
++      "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi";
++    let shell = null;
++    let offers = (async () => {
++      let adBlocker = await AddonManager.getAddonByID(adBlockerId).catch(
++        () => null
++      );
++      let offerDefaultBrowser = false;
++      try {
++        shell = getShellService();
++        offerDefaultBrowser =
++          !!shell &&
++          Services.policies.isAllowed("setDefaultBrowser") &&
++          !shell.isDefaultBrowser(false, true);
++      } catch (ex) {
++        console.error(ex);
++      }
++      return { offerAdBlocker: !adBlocker, offerDefaultBrowser };
++    })();
++
++    let frame = document.createElementNS(
++      "http://www.w3.org/1999/xhtml",
++      "iframe"
++    );
++    frame.id = "opz-welcome";
++    frame.style.cssText =
++      "position: fixed; inset: 0; width: 100%; height: 100%; border: none; z-index: 2147483647; background: #2563eb; color-scheme: light dark;";
++    let focusFrame = () => frame.isConnected && frame.contentWindow?.focus();
++    let keepFocus = event => {
++      if (event.target != frame) {
++        focusFrame();
++      }
++    };
++    window.addEventListener("focus", keepFocus, true);
++    let choices = await new Promise(resolve => {
++      frame.opzWelcome = { offers, finish: resolve };
++      frame.src = "chrome://browser/content/opz/welcome.xhtml";
++      document.documentElement.appendChild(frame);
++      frame.addEventListener("load", focusFrame, { once: true });
++    });
++    window.removeEventListener("focus", keepFocus, true);
++    frame.remove();
++    gBrowser.selectedBrowser.focus();
++
++    if (choices.engineId) {
++      try {
++        let { SearchService } = ChromeUtils.importESModule(
++          "moz-src:///toolkit/components/search/SearchService.sys.mjs"
++        );
++        let engine = SearchService.getEngineById(choices.engineId);
++        if (engine && engine != SearchService.defaultEngine) {
++          await SearchService.setDefault(
++            engine,
++            SearchService.CHANGE_REASON.USER
++          );
++        }
++      } catch (ex) {
++        console.error("Opz welcome: could not set the search engine", ex);
++      }
++    }
++    if (choices.setDefaultBrowser && shell) {
++      try {
++        await shell.setDefaultBrowser(false);
++      } catch (ex) {
++        console.error("Opz welcome: could not set the default browser", ex);
++      }
++    }
++    if (choices.blockAds) {
++      AddonManager.getInstallForURL(adBlockerURL, {
++        telemetryInfo: { source: "amo" },
++      })
++        .then(install => install.install())
++        .catch(ex =>
++          console.error("Opz welcome: could not install uBlock Origin", ex)
++        );
++    }
++    if (choices.importData) {
++      MigrationUtils.showMigrationWizard(window, {
++        entrypoint: MigrationUtils.MIGRATION_ENTRYPOINTS.UNKNOWN,
++      });
++    }
++  },
++
+   onDOMContentLoaded() {
+     // All of this needs setting up before we create the first remote browser.
+     window.docShell.treeOwner
+diff --git a/browser/base/content/opz/welcome.css b/browser/base/content/opz/welcome.css
+new file mode 100644
+index 0000000000..def25e4eb4
+--- /dev/null
++++ b/browser/base/content/opz/welcome.css
+@@ -0,0 +1,377 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++:root {
++  --opz-blue: #2563eb;
++  --color-accent-primary: light-dark(#2563eb, #60a5fa);
++  --color-accent-primary-hover: light-dark(#1d4ed8, #93c5fd);
++  --color-accent-primary-active: light-dark(#1e40af, #bfdbfe);
++  --card-background: light-dark(#ffffff, #1c1c1e);
++  --panel-background: light-dark(#f2f2f2, #2c2c2e);
++  --option-background: light-dark(#ffffff, #1c1c1e);
++  --muted: light-dark(rgba(0, 0, 0, 0.6), rgba(255, 255, 255, 0.6));
++  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
++}
++
++html,
++body {
++  height: 100%;
++}
++
++body {
++  margin: 0;
++  overflow: hidden;
++  display: grid;
++  place-items: center;
++  background: var(--opz-blue);
++  font: message-box;
++  font-size: 15px;
++}
++
++#backdrop {
++  position: fixed;
++  inset: -20%;
++  background:
++    radial-gradient(circle at 25% 20%, #60a5fa 0, transparent 45%),
++    radial-gradient(ellipse 70% 60% at 85% 85%, #1e3a8a, transparent),
++    radial-gradient(circle at 70% 15%, #3b82f6 0, transparent 40%), var(--opz-blue);
++  -moz-window-dragging: drag;
++  animation: drift 24s ease-in-out infinite alternate;
++}
++
++@keyframes drift {
++  to {
++    transform: translate(4%, -3%) rotate(4deg) scale(1.05);
++  }
++}
++
++#intro,
++#steps {
++  grid-area: 1 / 1;
++  position: relative;
++}
++
++/* Intro */
++
++#intro {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 20px;
++  color: white;
++  text-align: center;
++  -moz-window-dragging: drag;
++  transition:
++    opacity 0.35s ease,
++    transform 0.35s ease;
++
++  &[hidden] {
++    display: none;
++  }
++
++  .logo {
++    width: 88px;
++    height: 88px;
++    border-radius: 22px;
++    box-shadow:
++      0 0 0 4px rgba(255, 255, 255, 0.25),
++      0 12px 40px rgba(15, 23, 42, 0.35);
++    opacity: 0;
++    animation: rise 0.7s var(--ease-out) 0.1s forwards;
++  }
++
++  #intro-subtitle,
++  #intro-start {
++    opacity: 0;
++    animation: rise 0.6s var(--ease-out) forwards;
++    animation-delay: calc(var(--title-chars, 16) * 35ms + 600ms);
++  }
++
++  #intro-subtitle {
++    margin: 0;
++    font-size: 1.25rem;
++    color: rgba(255, 255, 255, 0.85);
++  }
++
++  #intro-start {
++    margin-top: 16px;
++    padding: 12px 32px;
++    border: none;
++    border-radius: 999px;
++    background: white;
++    color: var(--opz-blue);
++    font-size: 1.05rem;
++    font-weight: 600;
++    -moz-window-dragging: no-drag;
++    transition: scale 0.15s ease-out;
++
++    &:hover {
++      scale: 1.04;
++      background: white;
++      color: #1d4ed8;
++    }
++
++    &:active {
++      scale: 0.98;
++    }
++  }
++}
++
++#intro-title {
++  margin: 0;
++  font-size: clamp(2.8rem, 7vw, 5rem);
++  font-weight: 700;
++  line-height: 1.05;
++  letter-spacing: -0.03em;
++  color: white;
++
++  .line {
++    display: block;
++  }
++
++  .char {
++    display: inline-block;
++    opacity: 0;
++    animation: rise 0.55s var(--ease-out) forwards;
++    animation-delay: calc(var(--i) * 35ms + 300ms);
++  }
++}
++
++body:not(.ready) #intro .char,
++body:not(.ready) #intro-subtitle,
++body:not(.ready) #intro-start {
++  animation-play-state: paused;
++}
++
++body.intro-leaving #intro {
++  opacity: 0;
++  transform: translateY(-16px);
++}
++
++@keyframes rise {
++  from {
++    opacity: 0;
++    transform: translateY(24px);
++  }
++  to {
++    opacity: 1;
++    transform: none;
++  }
++}
++
++/* Steps */
++
++#steps {
++  display: grid;
++  grid-template-columns: 5fr 6fr;
++  width: min(920px, 90vw);
++  height: min(580px, 86vh);
++  border-radius: 20px;
++  overflow: hidden;
++  background: var(--card-background);
++  color: var(--text-color);
++  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
++  animation: card-in 0.5s var(--ease-out);
++
++  &[hidden] {
++    display: none;
++  }
++}
++
++@keyframes card-in {
++  from {
++    opacity: 0;
++    transform: translateY(24px) scale(0.98);
++  }
++}
++
++#step-text {
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  padding: 48px 44px 36px;
++  min-height: 0;
++}
++
++#step-count {
++  margin: 0;
++  font-size: 0.8rem;
++  font-weight: 600;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  color: var(--color-accent-primary);
++}
++
++#step-title {
++  margin: 0;
++  font-size: 2rem;
++  font-weight: 700;
++  line-height: 1.15;
++  letter-spacing: -0.02em;
++}
++
++#step-description {
++  margin: 0;
++  line-height: 1.55;
++  color: var(--muted);
++}
++
++#step-buttons {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin-top: auto;
++
++  .spacer {
++    flex: 1;
++  }
++
++  button {
++    margin: 0;
++  }
++
++  #step-skip {
++    background: none;
++    border-color: transparent;
++    color: var(--muted);
++  }
++}
++
++#step-content {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: 40px;
++  min-height: 0;
++  overflow-y: auto;
++  background: var(--panel-background);
++}
++
++#step-title,
++#step-description,
++#step-count,
++#step-content > * {
++  transition:
++    opacity 0.18s ease,
++    transform 0.18s ease;
++}
++
++#steps.switching {
++  #step-title,
++  #step-description,
++  #step-count,
++  #step-content > * {
++    opacity: 0;
++    transform: translateY(8px);
++  }
++}
++
++#steps:not(.switching) #step-content > * {
++  animation: rise 0.35s var(--ease-out);
++}
++
++.options {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  width: 100%;
++  max-width: 380px;
++  margin-block: auto;
++}
++
++.option {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++  padding: 14px 16px;
++  border: 1.5px solid transparent;
++  border-radius: 12px;
++  background: var(--option-background);
++  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
++  cursor: pointer;
++  transition:
++    border-color 0.15s ease,
++    transform 0.15s ease;
++
++  &:hover {
++    transform: translateY(-1px);
++  }
++
++  &:has(input:checked) {
++    border-color: var(--color-accent-primary);
++  }
++
++  &:has(input:focus-visible) {
++    outline: 2px solid var(--color-accent-primary);
++    outline-offset: 2px;
++  }
++
++  > input {
++    margin: 0;
++    accent-color: var(--color-accent-primary);
++  }
++}
++
++.option-icon {
++  width: 24px;
++  height: 24px;
++  border-radius: 6px;
++}
++
++.done-logo {
++  width: 128px;
++  height: 128px;
++  border-radius: 32px;
++  box-shadow: 0 16px 48px rgba(37, 99, 235, 0.35);
++  animation: float 4s ease-in-out infinite alternate;
++}
++
++@keyframes float {
++  to {
++    transform: translateY(-10px);
++  }
++}
++
++body.leaving {
++  #steps,
++  #backdrop {
++    opacity: 0;
++    transition: opacity 0.4s ease;
++  }
++
++  #steps {
++    transform: scale(0.97);
++    transition:
++      opacity 0.4s ease,
++      transform 0.4s ease;
++  }
++}
++
++@media (max-width: 760px) {
++  #steps {
++    grid-template-columns: 1fr;
++    grid-template-rows: auto 1fr;
++    width: 100vw;
++    height: 100vh;
++    border-radius: 0;
++  }
++
++  #step-text {
++    padding: 32px 24px 20px;
++  }
++
++  #step-content {
++    padding: 24px;
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    animation-duration: 0s !important;
++    animation-delay: 0s !important;
++    transition-duration: 0s !important;
++  }
++}
+diff --git a/browser/base/content/opz/welcome.mjs b/browser/base/content/opz/welcome.mjs
+new file mode 100644
+index 0000000000..6eb16d7507
+--- /dev/null
++++ b/browser/base/content/opz/welcome.mjs
+@@ -0,0 +1,265 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++const { SearchService } = ChromeUtils.importESModule(
++  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
++);
++
++// Set on the <iframe> by gBrowserInit._maybeShowOpzWelcome:
++// { offers: Promise<{ offerAdBlocker, offerDefaultBrowser }>, finish(choices) }.
++const context = window.frameElement?.opzWelcome ?? {
++  offers: Promise.resolve({ offerAdBlocker: true, offerDefaultBrowser: true }),
++  finish() {},
++};
++
++const choices = {
++  importData: false,
++  engineId: null,
++  blockAds: false,
++  setDefaultBrowser: false,
++};
++
++const $ = id => document.getElementById(id);
++const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
++
++function wait(ms) {
++  return new Promise(resolve =>
++    setTimeout(resolve, reducedMotion.matches ? 0 : ms)
++  );
++}
++
++function yesNo(key, yesL10n, noL10n, yesFirst) {
++  return {
++    key,
++    skipValue: false,
++    options: [
++      { value: true, l10n: yesL10n, checked: yesFirst },
++      { value: false, l10n: noL10n, checked: !yesFirst },
++    ],
++  };
++}
++
++async function searchOptions() {
++  let engines = await SearchService.getVisibleEngines();
++  let current = SearchService.defaultEngine?.id;
++  return Promise.all(
++    engines.map(async engine => ({
++      value: engine.id,
++      text: engine.name,
++      icon:
++        (await engine.getIconURL(32).catch(() => null)) ||
++        "chrome://global/skin/icons/search-glass.svg",
++      checked: engine.id == current,
++    }))
++  );
++}
++
++let steps = [];
++
++function buildSteps({ offerAdBlocker, offerDefaultBrowser }) {
++  return [
++    {
++      id: "import",
++      title: "opz-welcome-import-title",
++      description: "opz-welcome-import-description",
++      ...yesNo("importData", "opz-welcome-import-yes", "opz-welcome-import-no"),
++    },
++    {
++      id: "search",
++      title: "opz-welcome-search-title",
++      description: "opz-welcome-search-description",
++      key: "engineId",
++      skipValue: null,
++      options: searchOptions,
++    },
++    offerAdBlocker && {
++      id: "ads",
++      title: "opz-welcome-ads-title",
++      description: "opz-welcome-ads-description",
++      ...yesNo("blockAds", "opz-welcome-ads-yes", "opz-welcome-ads-no", true),
++    },
++    offerDefaultBrowser && {
++      id: "default",
++      title: "opz-welcome-default-title",
++      description: "opz-welcome-default-description",
++      ...yesNo(
++        "setDefaultBrowser",
++        "opz-welcome-default-yes",
++        "opz-welcome-default-no",
++        true
++      ),
++    },
++    {
++      id: "done",
++      title: "opz-welcome-done-title",
++      description: "opz-welcome-done-description",
++      final: true,
++    },
++  ].filter(Boolean);
++}
++
++let current = -1;
++const answered = new Set();
++
++function createOption(step, option) {
++  let label = document.createElement("label");
++  label.className = "option";
++  let input = document.createElement("input");
++  input.type = "radio";
++  input.name = step.id;
++  input.checked = answered.has(step.key)
++    ? choices[step.key] === option.value
++    : !!option.checked;
++  input.optionValue = option.value;
++  label.append(input);
++  if (option.icon) {
++    let icon = document.createElement("img");
++    icon.className = "option-icon";
++    icon.src = option.icon;
++    icon.alt = "";
++    label.append(icon);
++  }
++  let text = document.createElement("span");
++  if (option.l10n) {
++    document.l10n.setAttributes(text, option.l10n);
++  } else {
++    text.textContent = option.text;
++  }
++  label.append(text);
++  return label;
++}
++
++async function renderStep(index) {
++  let step = steps[index];
++  let content = $("step-content");
++  let options =
++    typeof step.options == "function" ? await step.options() : step.options;
++
++  document.l10n.setAttributes($("step-count"), "opz-welcome-step-count", {
++    current: index + 1,
++    total: steps.length - 1,
++  });
++  $("step-count").hidden = !!step.final;
++  document.l10n.setAttributes($("step-title"), step.title);
++  document.l10n.setAttributes($("step-description"), step.description);
++  document.l10n.setAttributes(
++    $("step-next"),
++    step.final ? "opz-welcome-finish" : "opz-welcome-continue"
++  );
++  $("step-skip").hidden = !!step.final;
++  $("step-back").hidden = index == 0;
++
++  content.replaceChildren();
++  content.dataset.step = step.id;
++  if (step.final) {
++    let logo = document.createElement("img");
++    logo.className = "done-logo";
++    logo.src = "chrome://branding/content/about-logo.svg";
++    logo.alt = "";
++    content.append(logo);
++  } else {
++    let list = document.createElement("div");
++    list.className = "options";
++    list.setAttribute("role", "radiogroup");
++    for (let option of options) {
++      list.append(createOption(step, option));
++    }
++    content.append(list);
++  }
++}
++
++async function goTo(index) {
++  let steps_ = $("steps");
++  if (current >= 0) {
++    steps_.classList.add("switching");
++    await wait(180);
++  }
++  current = index;
++  await renderStep(index);
++  await document.l10n.translateFragment(steps_);
++  steps_.classList.remove("switching");
++  $("step-next").focus();
++}
++
++function readStep(skip) {
++  let step = steps[current];
++  if (step.final) {
++    return;
++  }
++  if (skip) {
++    choices[step.key] = step.skipValue;
++    answered.delete(step.key);
++    return;
++  }
++  let checked = $("step-content").querySelector("input:checked");
++  choices[step.key] = checked ? checked.optionValue : step.skipValue;
++  answered.add(step.key);
++}
++
++async function finish() {
++  document.body.classList.add("leaving");
++  await wait(400);
++  context.finish({ ...choices });
++}
++
++async function next(skip) {
++  readStep(skip);
++  if (steps[current].final) {
++    await finish();
++    return;
++  }
++  await goTo(current + 1);
++}
++
++async function renderIntro() {
++  let [line1, line2] = await document.l10n.formatValues([
++    { id: "opz-welcome-intro-line1" },
++    { id: "opz-welcome-intro-line2" },
++  ]);
++  let title = $("intro-title");
++  let i = 0;
++  for (let line of [line1, line2]) {
++    let lineElement = document.createElement("span");
++    lineElement.className = "line";
++    for (let char of line) {
++      if (char == " ") {
++        lineElement.append(" ");
++        continue;
++      }
++      let charElement = document.createElement("span");
++      charElement.className = "char";
++      charElement.style.setProperty("--i", i++);
++      charElement.textContent = char;
++      lineElement.append(charElement);
++    }
++    title.append(lineElement);
++  }
++  title.setAttribute("aria-label", `${line1} ${line2}`);
++  document.body.style.setProperty("--title-chars", i);
++  document.body.classList.add("ready");
++  $("intro-start").focus();
++}
++
++$("intro-start").addEventListener("click", async () => {
++  document.body.classList.add("intro-leaving");
++  let [offers] = await Promise.all([
++    context.offers.catch(() => ({})),
++    wait(350),
++  ]);
++  steps = buildSteps(offers);
++  $("intro").hidden = true;
++  $("steps").hidden = false;
++  await goTo(0);
++});
++$("step-next").addEventListener("click", () => next(false));
++$("step-skip").addEventListener("click", () => next(true));
++$("step-back").addEventListener("click", () => goTo(current - 1));
++
++window.addEventListener("focus", () => {
++  if (document.activeElement == document.body) {
++    ($("intro").hidden ? $("step-next") : $("intro-start")).focus();
++  }
++});
++
++renderIntro();
+diff --git a/browser/base/content/opz/welcome.xhtml b/browser/base/content/opz/welcome.xhtml
+new file mode 100644
+index 0000000000..84335c4c24
+--- /dev/null
++++ b/browser/base/content/opz/welcome.xhtml
+@@ -0,0 +1,47 @@
++<?xml version="1.0" encoding="UTF-8"?>
++
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++
++<html xmlns="http://www.w3.org/1999/xhtml">
++  <head>
++    <meta
++      http-equiv="Content-Security-Policy"
++      content="default-src chrome:; img-src chrome: moz-extension: data: blob: https:; object-src 'none'"
++    />
++    <meta name="color-scheme" content="light dark" />
++    <title data-l10n-id="opz-welcome-window-title"></title>
++    <link rel="stylesheet" href="chrome://global/skin/global.css" />
++    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
++    <link rel="stylesheet" href="chrome://browser/content/opz/welcome.css" />
++    <link rel="localization" href="branding/brand.ftl" />
++    <link rel="localization" href="browser/opzWelcome.ftl" />
++    <script src="chrome://browser/content/opz/welcome.mjs" type="module"></script>
++  </head>
++  <body>
++    <div id="backdrop"></div>
++
++    <section id="intro">
++      <img class="logo" src="chrome://branding/content/about-logo.svg" alt="" />
++      <h1 id="intro-title"></h1>
++      <p id="intro-subtitle" data-l10n-id="opz-welcome-intro-subtitle"></p>
++      <button id="intro-start" class="primary" data-l10n-id="opz-welcome-start"></button>
++    </section>
++
++    <section id="steps" hidden="hidden">
++      <div id="step-text">
++        <p id="step-count"></p>
++        <h2 id="step-title"></h2>
++        <p id="step-description"></p>
++        <div id="step-buttons">
++          <button id="step-back" data-l10n-id="opz-welcome-back"></button>
++          <span class="spacer"></span>
++          <button id="step-skip" data-l10n-id="opz-welcome-skip"></button>
++          <button id="step-next" class="primary" data-l10n-id="opz-welcome-continue"></button>
++        </div>
++      </div>
++      <div id="step-content"></div>
++    </section>
++  </body>
++</html>
+diff --git a/browser/base/jar.mn b/browser/base/jar.mn
+index b2b5db6040..858db4cbc3 100644
+--- a/browser/base/jar.mn
++++ b/browser/base/jar.mn
+@@ -13,6 +13,9 @@ browser.jar:
+         content/browser/aboutRobots.xhtml             (content/aboutRobots.xhtml)
+         content/browser/aboutRobots.js                (content/aboutRobots.js)
+         content/browser/aboutRobots.css               (content/aboutRobots.css)
++        content/browser/opz/welcome.xhtml             (content/opz/welcome.xhtml)
++        content/browser/opz/welcome.mjs               (content/opz/welcome.mjs)
++        content/browser/opz/welcome.css               (content/opz/welcome.css)
+         content/browser/logos/etp-mobile.svg          (content/logos/etp-mobile.svg)
+         content/browser/logos/lockwise.svg            (content/logos/lockwise.svg)
+         content/browser/logos/monitor.svg             (content/logos/monitor.svg)
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+index 59c2edf7d3..f0c9dbb7bb 100644
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -1606,6 +1606,12 @@ BrowserGlue.prototype = {
+     }
+   },
+ 
++  /**
++   * Covers the first browser window with the Opz welcome screen once per
++   * profile, then applies what the user picked there: import from another
++   * browser, default search engine, uBlock Origin (installed from
++   * addons.mozilla.org) and default browser.
++   */
+   async _maybeShowDefaultBrowserPrompt() {
+     // Ensuring the user is notified arranges the following ordering.  Highest
+     // priority is datareporting policy modal, if present.  Second highest
+diff --git a/browser/locales/en-US/browser/opzWelcome.ftl b/browser/locales/en-US/browser/opzWelcome.ftl
+new file mode 100644
+index 0000000000..2cc3d2c6db
+--- /dev/null
++++ b/browser/locales/en-US/browser/opzWelcome.ftl
+@@ -0,0 +1,40 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++opz-welcome-window-title = Welcome to { -brand-short-name }
++
++opz-welcome-intro-line1 = Welcome to
++opz-welcome-intro-line2 = { -brand-short-name }
++opz-welcome-intro-subtitle = A quieter, more private way to browse.
++opz-welcome-start = Get started
++
++# Variables:
++#   $current (Number) - number of the current step
++#   $total (Number) - number of steps
++opz-welcome-step-count = Step { $current } of { $total }
++opz-welcome-back = Back
++opz-welcome-skip = Skip
++opz-welcome-continue = Continue
++opz-welcome-finish = Start browsing
++
++opz-welcome-import-title = Bring your stuff along
++opz-welcome-import-description = Import bookmarks, history and passwords from another browser and pick up right where you left off.
++opz-welcome-import-yes = Import from another browser
++opz-welcome-import-no = Start fresh
++
++opz-welcome-search-title = Pick your search engine
++opz-welcome-search-description = This is what you search with from the address bar. You can change it any time in Settings.
++
++opz-welcome-ads-title = Block ads?
++opz-welcome-ads-description = Trackers are already blocked. { -brand-short-name } can also install uBlock Origin, a free and open-source ad blocker, so pages load cleaner and faster. You can remove it any time in Add-ons and themes.
++opz-welcome-ads-yes = Yes, block ads
++opz-welcome-ads-no = No, show me everything
++
++opz-welcome-default-title = Make { -brand-short-name } your default?
++opz-welcome-default-description = Links you open from other apps will open in { -brand-short-name }. You can change this later.
++opz-welcome-default-yes = Yes, make { -brand-short-name } my default
++opz-welcome-default-no = Not now
++
++opz-welcome-done-title = You’re all set
++opz-welcome-done-description = Trackers are blocked, and your choices are saved. Enjoy the quiet.

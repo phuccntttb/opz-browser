@@ -1,0 +1,231 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sun, 8 Nov 2026 21:44:29 +0700
+Subject: [PATCH] Theme: plain gray Opz theme, light/dark follows the system
+
+---
+ browser/themes/BuiltInThemeConfig.sys.mjs |   7 ++
+ browser/themes/BuiltInThemes.sys.mjs      |  29 +++++++
+ browser/themes/addons/jar.mn              |   4 +
+ browser/themes/addons/opz/icon.svg        |   4 +
+ browser/themes/addons/opz/manifest.json   | 101 ++++++++++++++++++++++
+ browser/themes/addons/opz/preview.svg     |  11 +++
+ 6 files changed, 156 insertions(+)
+ create mode 100644 browser/themes/addons/opz/icon.svg
+ create mode 100644 browser/themes/addons/opz/manifest.json
+ create mode 100644 browser/themes/addons/opz/preview.svg
+
+diff --git a/browser/themes/BuiltInThemeConfig.sys.mjs b/browser/themes/BuiltInThemeConfig.sys.mjs
+index 39d16addcf..5c0dee770d 100644
+--- a/browser/themes/BuiltInThemeConfig.sys.mjs
++++ b/browser/themes/BuiltInThemeConfig.sys.mjs
+@@ -21,6 +21,13 @@
+  *   (-moz-native-theme) media query.
+  */
+ export const BuiltInThemeConfig = new Map([
++  [
++    "opz-plain@opz",
++    {
++      version: "1.0.0",
++      path: "resource://builtin-themes/opz/",
++    },
++  ],
+   [
+     "firefox-compact-light@mozilla.org",
+     {
+diff --git a/browser/themes/BuiltInThemes.sys.mjs b/browser/themes/BuiltInThemes.sys.mjs
+index 61343fb1f0..d3dd99e8b6 100644
+--- a/browser/themes/BuiltInThemes.sys.mjs
++++ b/browser/themes/BuiltInThemes.sys.mjs
+@@ -10,6 +10,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
+ });
+ 
+ const kActiveThemePref = "extensions.activeThemeID";
++// Opz: the plain "Opz" theme is switched on once per profile, new or old.
++// After that the user's own choice in Add-ons and themes is kept.
++const kOpzThemeID = "opz-plain@opz";
++const kOpzThemeAppliedPref = "opz.defaultThemeApplied";
+ 
+ class _BuiltInThemes {
+   /**
+@@ -51,6 +55,31 @@ class _BuiltInThemes {
+         activeBuiltInTheme.path
+       );
+     }
++
++    this.applyOpzThemeOnce();
++  }
++
++  /**
++   * Opz: installs the Opz theme and makes it the active theme, once per
++   * profile (marked by opz.defaultThemeApplied).
++   */
++  async applyOpzThemeOnce() {
++    if (Services.prefs.getBoolPref(kOpzThemeAppliedPref, false)) {
++      return;
++    }
++    try {
++      let { version, path } = this.builtInThemeMap.get(kOpzThemeID);
++      await lazy.AddonManager.maybeInstallBuiltinAddon(
++        kOpzThemeID,
++        version,
++        path
++      );
++      let addon = await lazy.AddonManager.getAddonByID(kOpzThemeID);
++      await addon.enable();
++      Services.prefs.setBoolPref(kOpzThemeAppliedPref, true);
++    } catch (e) {
++      console.error("Opz: could not switch to the Opz theme", e);
++    }
+   }
+ 
+   /**
+diff --git a/browser/themes/addons/jar.mn b/browser/themes/addons/jar.mn
+index fc83c11fdf..2aff46d822 100644
+--- a/browser/themes/addons/jar.mn
++++ b/browser/themes/addons/jar.mn
+@@ -16,6 +16,10 @@ browser.jar:
+   content/builtin-themes/light/icon.svg            (light/icon.svg)
+   content/builtin-themes/light/manifest.json       (light/manifest.json)
+ 
++  content/builtin-themes/opz/preview.svg           (opz/preview.svg)
++  content/builtin-themes/opz/icon.svg              (opz/icon.svg)
++  content/builtin-themes/opz/manifest.json         (opz/manifest.json)
++
+   content/builtin-themes/aiwindow/manifest.json        (aiwindow/manifest.json)
+   content/builtin-themes/aiwindow/aiwindow-theme.css   (aiwindow/aiwindow-theme.css)
+ 
+diff --git a/browser/themes/addons/opz/icon.svg b/browser/themes/addons/opz/icon.svg
+new file mode 100644
+index 0000000000..bff17d0826
+--- /dev/null
++++ b/browser/themes/addons/opz/icon.svg
+@@ -0,0 +1,4 @@
++<svg width="62" height="62" viewBox="0 0 62 62" xmlns="http://www.w3.org/2000/svg">
++  <circle cx="31" cy="31" r="31" fill="#1c1c1e"/>
++  <path d="M31 0a31 31 0 0 0 0 62z" fill="#f2f2f2"/>
++</svg>
+diff --git a/browser/themes/addons/opz/manifest.json b/browser/themes/addons/opz/manifest.json
+new file mode 100644
+index 0000000000..d8d6c33ce4
+--- /dev/null
++++ b/browser/themes/addons/opz/manifest.json
+@@ -0,0 +1,101 @@
++{
++  "manifest_version": 2,
++
++  "browser_specific_settings": {
++    "gecko": {
++      "id": "opz-plain@opz"
++    }
++  },
++
++  "name": "Opz",
++  "description": "Plain gray, no accent color. Follows the system light or dark setting.",
++  "author": "Opz",
++  "version": "1.0.0",
++  "icons": { "32": "icon.svg" },
++
++  "theme": {
++    "colors": {
++      "frame": "#f2f2f2",
++      "frame_inactive": "#f2f2f2",
++      "toolbar": "#f2f2f2",
++      "toolbar_text": "#1c1c1e",
++      "icons": "#3a3a3c",
++      "icons_attention": "#3a3a3c",
++      "button_background_hover": "rgba(0, 0, 0, 0.06)",
++      "button_background_active": "rgba(0, 0, 0, 0.12)",
++      "toolbar_top_separator": "transparent",
++      "toolbar_bottom_separator": "transparent",
++      "toolbar_vertical_separator": "rgba(0, 0, 0, 0.1)",
++      "toolbar_field": "#ffffff",
++      "toolbar_field_text": "#1c1c1e",
++      "toolbar_field_border": "rgba(0, 0, 0, 0.1)",
++      "toolbar_field_focus": "#ffffff",
++      "toolbar_field_text_focus": "#1c1c1e",
++      "toolbar_field_border_focus": "#8e8e93",
++      "toolbar_field_highlight": "rgba(142, 142, 147, 0.35)",
++      "toolbar_field_highlight_text": "#1c1c1e",
++      "tab_background_text": "#1c1c1e",
++      "tab_text": "#1c1c1e",
++      "tab_selected": "#ffffff",
++      "tab_line": "transparent",
++      "tab_loading": "#8e8e93",
++      "tab_background_separator": "rgba(0, 0, 0, 0.1)",
++      "bookmark_text": "#1c1c1e",
++      "popup": "#ffffff",
++      "popup_text": "#1c1c1e",
++      "popup_border": "rgba(0, 0, 0, 0.1)",
++      "popup_highlight": "#ececec",
++      "popup_highlight_text": "#1c1c1e",
++      "sidebar": "#f2f2f2",
++      "sidebar_text": "#1c1c1e",
++      "sidebar_border": "rgba(0, 0, 0, 0.1)",
++      "sidebar_highlight": "#e2e2e2",
++      "sidebar_highlight_text": "#1c1c1e",
++      "ntp_background": "#ffffff",
++      "ntp_text": "#1c1c1e"
++    }
++  },
++
++  "dark_theme": {
++    "colors": {
++      "frame": "#1c1c1e",
++      "frame_inactive": "#1c1c1e",
++      "toolbar": "#1c1c1e",
++      "toolbar_text": "#f2f2f2",
++      "icons": "#d1d1d6",
++      "icons_attention": "#d1d1d6",
++      "button_background_hover": "rgba(255, 255, 255, 0.08)",
++      "button_background_active": "rgba(255, 255, 255, 0.14)",
++      "toolbar_top_separator": "transparent",
++      "toolbar_bottom_separator": "transparent",
++      "toolbar_vertical_separator": "rgba(255, 255, 255, 0.12)",
++      "toolbar_field": "#2c2c2e",
++      "toolbar_field_text": "#f2f2f2",
++      "toolbar_field_border": "transparent",
++      "toolbar_field_focus": "#2c2c2e",
++      "toolbar_field_text_focus": "#f2f2f2",
++      "toolbar_field_border_focus": "#8e8e93",
++      "toolbar_field_highlight": "rgba(142, 142, 147, 0.45)",
++      "toolbar_field_highlight_text": "#ffffff",
++      "tab_background_text": "#f2f2f2",
++      "tab_text": "#f2f2f2",
++      "tab_selected": "#2c2c2e",
++      "tab_line": "transparent",
++      "tab_loading": "#8e8e93",
++      "tab_background_separator": "rgba(255, 255, 255, 0.12)",
++      "bookmark_text": "#f2f2f2",
++      "popup": "#2c2c2e",
++      "popup_text": "#f2f2f2",
++      "popup_border": "rgba(255, 255, 255, 0.12)",
++      "popup_highlight": "#3a3a3c",
++      "popup_highlight_text": "#ffffff",
++      "sidebar": "#1c1c1e",
++      "sidebar_text": "#f2f2f2",
++      "sidebar_border": "rgba(255, 255, 255, 0.12)",
++      "sidebar_highlight": "#3a3a3c",
++      "sidebar_highlight_text": "#ffffff",
++      "ntp_background": "#1c1c1e",
++      "ntp_text": "#f2f2f2"
++    }
++  }
++}
+diff --git a/browser/themes/addons/opz/preview.svg b/browser/themes/addons/opz/preview.svg
+new file mode 100644
+index 0000000000..98b86c716d
+--- /dev/null
++++ b/browser/themes/addons/opz/preview.svg
+@@ -0,0 +1,11 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="680" height="92" viewBox="0 0 680 92" preserveAspectRatio="none">
++  <rect width="680" height="92" fill="#f2f2f2"/>
++  <rect x="28" y="5" width="166" height="34" rx="6" fill="#ffffff"/>
++  <rect x="51" y="20" width="121" height="4" rx="2" fill="#1c1c1e"/>
++  <rect x="221" y="20" width="121" height="4" rx="2" fill="#1c1c1e"/>
++  <circle cx="24" cy="68" r="6.25" fill="none" stroke="#3a3a3c" stroke-width="1.5"/>
++  <circle cx="60" cy="68" r="6.25" fill="none" stroke="#3a3a3c" stroke-width="1.5"/>
++  <path d="M649 61.75h14M649 67.75h14M649 73.75h14" stroke="#3a3a3c" stroke-width="1.5"/>
++  <rect x="114.5" y="52.5" width="487" height="31" rx="6" fill="#ffffff" stroke="#dadada"/>
++  <rect x="146" y="66" width="308" height="4" rx="2" fill="#3a3a3c"/>
++</svg>

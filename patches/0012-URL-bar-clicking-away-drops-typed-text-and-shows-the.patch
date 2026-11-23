@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Mon, 9 Nov 2026 11:16:00 +0700
+Subject: [PATCH] URL bar: clicking away drops typed text and shows the page
+ address again
+
+---
+ .../urlbar/content/UrlbarInputBase.mjs        | 57 ++++++++++++-------
+ 1 file changed, 38 insertions(+), 19 deletions(-)
+
+diff --git a/browser/components/urlbar/content/UrlbarInputBase.mjs b/browser/components/urlbar/content/UrlbarInputBase.mjs
+index 9bf6ad33a0..7062255b05 100644
+--- a/browser/components/urlbar/content/UrlbarInputBase.mjs
++++ b/browser/components/urlbar/content/UrlbarInputBase.mjs
+@@ -318,6 +318,7 @@ ${
+   // Bumped on each input-driven search; a deferred-Enter snapshots it so its
+   // async keyup can tell whether a fresh search has started since.
+   #inputEpoch = 0;
++  #navigating = false;
+ 
+   valueIsTyped = false;
+ 
+@@ -4277,25 +4278,30 @@ ${
+     // Notify about the start of navigation.
+     this.#notifyStartNavigation(resultDetails);
+ 
+-    let loadStatus = await this.parentController.loadURL({
+-      loadRequest,
+-      where,
+-      params,
+-      browserId,
+-      userTypedValue,
+-    });
+-    // Hand the loaded browser's id to the deferred-Enter key up handler so it
+-    // can focus it parent-side.
+-    keyDownEnterDeferred?.resolve(loadStatus.browserId);
+-    // The load can throw parent-side; unless an error page was shown we
+-    // replace the URL with the loaded one.
+-    if (loadStatus.reverted) {
+-      this.handleRevert();
+-    }
+-    if (!keepViewOpen) {
+-      // If we show the focus border after closing the view, it would appear
+-      // to flash since this._on_blur would remove it immediately after.
+-      this.view.close({ showFocusBorder: false });
++    this.#navigating = true;
++    try {
++      let loadStatus = await this.parentController.loadURL({
++        loadRequest,
++        where,
++        params,
++        browserId,
++        userTypedValue,
++      });
++      // Hand the loaded browser's id to the deferred-Enter key up handler so it
++      // can focus it parent-side.
++      keyDownEnterDeferred?.resolve(loadStatus.browserId);
++      // The load can throw parent-side; unless an error page was shown we
++      // replace the URL with the loaded one.
++      if (loadStatus.reverted) {
++        this.handleRevert();
++      }
++      if (!keepViewOpen) {
++        // If we show the focus border after closing the view, it would appear
++        // to flash since this._on_blur would remove it immediately after.
++        this.view.close({ showFocusBorder: false });
++      }
++    } finally {
++      this.#navigating = false;
+     }
+   }
+ 
+@@ -5236,6 +5242,19 @@ ${
+     // when they focus and select the address bar.
+     this.#preventClickSelectsAll = false;
+ 
++    // Opz: leaving the address bar (other than for a load it started, or a
++    // window switch, which keeps it focused) drops what was typed and shows
++    // the page's address again.
++    if (
++      this.#isAddressbar &&
++      !this.focused &&
++      !this.#navigating &&
++      !this._keyDownEnterDeferred &&
++      (this.view.isOpen || this.hasAttribute("usertyping") || this.searchMode)
++    ) {
++      this.handleRevert();
++    }
++
+     if (this._autofillPlaceholder && this.userTypedValue) {
+       // If we were autofilling, remove the autofilled portion, by restoring
+       // the value to the last typed one.

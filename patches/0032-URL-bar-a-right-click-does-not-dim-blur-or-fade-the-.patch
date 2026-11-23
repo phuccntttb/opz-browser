@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 13 Nov 2026 22:50:46 +0700
+Subject: [PATCH] URL bar: a right click does not dim, blur or fade the window,
+ and keeps the side icons hidden
+
+Patch 0016 keeps the address bar closed when it is focused only by a right
+click ([context-focus]). The cover, the blur behind the card, the fade-in and
+the side icons came later and still matched plain [focused], so a right click
+covered and blurred the window around a closed bar.
+---
+ browser/themes/shared/urlbar.css | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 6a81bfb158..fbcb88f033 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1779,7 +1779,7 @@ toolbar[inactive="true"] .urlbar,
+   display: none;
+ }
+ 
+-:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) > #opz-urlbar-scrim {
++:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) > #opz-urlbar-scrim {
+   display: block;
+   position: fixed;
+   inset: 0;
+@@ -1792,7 +1792,7 @@ toolbar[inactive="true"] .urlbar,
+   transition: filter 180ms ease-out;
+ }
+ 
+-:root:not([customizing]):has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
++:root:not([customizing]):has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
+   filter: blur(10px);
+ }
+ 
+@@ -1805,7 +1805,7 @@ toolbar[inactive="true"] .urlbar,
+ /* The card, its dimming shadow and its results fade in. While a New Tab waits
+  * for its results the card is hidden and has no animation, which starts when
+  * it is shown. */
+-:root:not([customizing]) #navigator-toolbox #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
++:root:not([customizing]) #navigator-toolbox #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
+   animation: opz-urlbar-in 180ms ease-out;
+ 
+   @media (prefers-reduced-motion) {
+@@ -1833,7 +1833,7 @@ toolbar[inactive="true"] .urlbar,
+  * information / permissions on the left, page actions on the right) are
+  * invisible until the pointer is over the toolbar. They keep their place, so nothing
+  * shifts when they appear. Once the bar is in use they are always shown. */
+-:root:not([customizing]) #urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
++:root:not([customizing]) #urlbar:not([open], [popover-open], [usertyping], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
+   & #identity-box,
+   & #page-action-buttons {
+     opacity: 0;

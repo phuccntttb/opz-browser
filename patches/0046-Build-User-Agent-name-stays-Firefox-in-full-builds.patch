@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 20 Nov 2026 23:22:12 +0700
+Subject: [PATCH] Build: User-Agent name stays Firefox in full builds
+
+imply MOZ_APP_UA_NAME=Firefox so a full build (mozconfig.full) sends the
+same User-Agent as Firefox. Artifact builds already get it from UAName in
+application.ini (scripts/build.sh).
+---
+ browser/moz.configure | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/browser/moz.configure b/browser/moz.configure
+index 8979a2e4e8..a2b85d77ce 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -12,6 +12,11 @@ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ 
+ imply_option("MOZ_APP_VENDOR", "Mozilla")
++# Opz: the User-Agent keeps the "Firefox/<version>" token (sites such as
++# Google sign-in treat unknown browsers differently). Compiled into full
++# builds (netwerk/protocol/http/nsHttpHandler.cpp); artifact builds get the
++# same from UAName in application.ini (scripts/build.sh).
++imply_option("MOZ_APP_UA_NAME", "Firefox")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")

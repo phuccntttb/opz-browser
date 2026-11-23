@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 17:50:23 +0700
+Subject: [PATCH] Sidebar: pin button at the bottom of the expanded tab column
+ to turn auto-collapse off and on
+
+---
+ browser/components/sidebar/sidebar-main.css | 41 +++++++++++++++++++++
+ browser/components/sidebar/sidebar-main.mjs | 31 ++++++++++++++++
+ 2 files changed, 72 insertions(+)
+
+diff --git a/browser/components/sidebar/sidebar-main.css b/browser/components/sidebar/sidebar-main.css
+index 4547ac44b8..e5e842e25c 100644
+--- a/browser/components/sidebar/sidebar-main.css
++++ b/browser/components/sidebar/sidebar-main.css
+@@ -231,3 +231,44 @@
+ .bottom-actions {
+   align-self: end;
+ }
++
++/* Opz: a pin button at the bottom of the expanded tab column that turns the
++ * auto-collapse (expand on hover) off and on. Only shown while expanded, and only visible while the pointer is over the column. */
++.opz-auto-collapse-button {
++  display: none;
++}
++
++:host([expanded]) .opz-auto-collapse-button {
++  display: block;
++  flex: none;
++  box-sizing: border-box;
++  width: 32px;
++  height: 32px;
++  margin: auto 8px 8px auto;
++  padding: 0;
++  border: none;
++  border-radius: var(--border-radius-medium);
++  background-color: transparent;
++  background-image: url("chrome://browser/skin/pin.svg");
++  background-repeat: no-repeat;
++  background-position: center;
++  background-size: 16px;
++  -moz-context-properties: fill;
++  fill: currentColor;
++  color: inherit;
++  opacity: 0;
++  transition: opacity 150ms ease;
++
++  :host(:hover) &,
++  &:focus-visible {
++    opacity: 1;
++  }
++
++  &:hover {
++    background-color: color-mix(in srgb, currentColor 10%, transparent);
++  }
++
++  &[aria-pressed="true"] {
++    background-color: color-mix(in srgb, currentColor 18%, transparent);
++  }
++}
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index d1576f3d92..062ac7cbb2 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -972,9 +972,40 @@ export default class SidebarMain extends MozLitElement {
+             </moz-button>
+           </button-group>
+         </div>
++        ${when(
++          window.SidebarController.sidebarVerticalTabsEnabled,
++          () => {
++            const pinned =
++              window.SidebarController.sidebarRevampVisibility !==
++              "expand-on-hover";
++            const label = pinned
++              ? "Turn on auto-collapse"
++              : "Turn off auto-collapse";
++            return html`<button
++              class="opz-auto-collapse-button"
++              title=${label}
++              aria-label=${label}
++              aria-pressed=${pinned}
++              @click=${this.opzToggleAutoCollapse}
++            ></button>`;
++          }
++        )}
+       </div>
+     `;
+   }
++
++  opzToggleAutoCollapse() {
++    const controller = window.SidebarController;
++    const autoCollapse = controller.sidebarRevampVisibility === "expand-on-hover";
++    Services.prefs.setStringPref(
++      "sidebar.visibility",
++      autoCollapse ? "always-show" : "expand-on-hover"
++    );
++    if (autoCollapse) {
++      controller._state.launcherExpanded = true;
++    }
++    this.requestUpdate();
++  }
+ }
+ 
+ customElements.define("sidebar-main", SidebarMain);

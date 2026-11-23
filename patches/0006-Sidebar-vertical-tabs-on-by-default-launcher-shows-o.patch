@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sat, 7 Nov 2026 19:29:39 +0700
+Subject: [PATCH] Sidebar: vertical tabs on by default, launcher shows only the
+ tabs
+
+Turns sidebar.verticalTabs on once per profile after the first window loads (opz.verticalTabsDefaultApplied); a new profile that starts straight in vertical mode gets a broken nav-bar. While tabs are vertical the launcher's tool and customize buttons are hidden with visibility/height so the collapsed launcher keeps its width.
+---
+ browser/components/BrowserGlue.sys.mjs            |  9 +++++++++
+ browser/components/sidebar/SidebarManager.sys.mjs |  5 ++++-
+ browser/components/sidebar/browser-sidebar.js     |  3 ++-
+ browser/components/sidebar/sidebar-main.css       | 12 ++++++++++++
+ browser/components/sidebar/sidebar-main.mjs       |  9 ++++++++-
+ 5 files changed, 35 insertions(+), 3 deletions(-)
+
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+index 4a292baaec..59c2edf7d3 100644
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -714,6 +714,15 @@ BrowserGlue.prototype = {
+ 
+   // the first browser window has finished initializing
+   _onFirstWindowLoaded: function BG__onFirstWindowLoaded(aWindow) {
++    // Opz: turn vertical tabs on once per profile. Doing it here, after the
++    // first window is up, goes through the same layout switch as the user's
++    // "Turn on vertical tabs"; starting a new profile straight in vertical
++    // mode builds a broken nav-bar.
++    if (!Services.prefs.getBoolPref("opz.verticalTabsDefaultApplied", false)) {
++      Services.prefs.setBoolPref("opz.verticalTabsDefaultApplied", true);
++      Services.prefs.setBoolPref("sidebar.verticalTabs", true);
++    }
++
+     // A channel for "remote troubleshooting" code...
+     let channel = new lazy.WebChannel(
+       "remote-troubleshooting",
+diff --git a/browser/components/sidebar/SidebarManager.sys.mjs b/browser/components/sidebar/SidebarManager.sys.mjs
+index 09dd32a61c..2d983ac28a 100644
+--- a/browser/components/sidebar/SidebarManager.sys.mjs
++++ b/browser/components/sidebar/SidebarManager.sys.mjs
+@@ -21,7 +21,10 @@ const VERTICAL_VISIBILITIES = [
+ ];
+ const HORIZONTAL_VISIBILITIES = ["hide-on-close", "hide-launcher"];
+ const DEFAULT_VERTICAL_VISIBILITY = "always-show";
+-const DEFAULT_HORIZONTAL_VISIBILITY = "hide-on-close";
++// Opz: with horizontal tabs, no launcher column of tool icons. Bookmarks,
++// history and the other tools open as panels with a switcher in their header;
++// the sidebar's Customize panel can bring the launcher back.
++const DEFAULT_HORIZONTAL_VISIBILITY = "hide-launcher";
+ 
+ // New panels that are ready to be introduced to new sidebar users should be added to this list;
+ // ensure your feature flag is enabled at the same time you do this and that its the same value as
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index 3a9925d2a3..710cd92b0d 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -3032,7 +3032,8 @@ XPCOMUtils.defineLazyPreferenceGetter(
+         if (newValue && !verticalValues.includes(visibility)) {
+           visibility = "always-show";
+         } else if (!newValue && verticalValues.includes(visibility)) {
+-          visibility = "hide-on-close";
++          // Opz: matches DEFAULT_HORIZONTAL_VISIBILITY in SidebarManager.
++          visibility = "hide-launcher";
+         }
+         const forceExpand =
+           newValue && ["always-show", "hide-sidebar"].includes(visibility);
+diff --git a/browser/components/sidebar/sidebar-main.css b/browser/components/sidebar/sidebar-main.css
+index 03a750d324..4547ac44b8 100644
+--- a/browser/components/sidebar/sidebar-main.css
++++ b/browser/components/sidebar/sidebar-main.css
+@@ -179,6 +179,18 @@
+   }
+ }
+ 
++/* Opz: tool buttons hidden while tabs are vertical (see sidebar-main.mjs).
++   Not display: none, because the collapsed launcher takes its width from
++   these buttons. The !important beats the height browser-sidebar.js sets. */
++.buttons-wrapper[opz-hide-tools] {
++  visibility: hidden;
++  height: 0 !important;
++  min-height: 0;
++  padding-block: 0;
++  margin-block: 0;
++  border-block: 0;
++}
++
+ .buttons-wrapper {
+   display: flex;
+   flex-direction: column;
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index 315082705f..7e96b7a394 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -890,6 +890,11 @@ export default class SidebarMain extends MozLitElement {
+   }
+ 
+   render() {
++    // Opz: with vertical tabs the launcher shows only the tabs. The tool
++    // buttons stay in the DOM (other code queries them) but are hidden by
++    // sidebar-main.css; the panels are still reachable from View > Sidebar
++    // and their keyboard shortcuts.
++    const opzHideTools = window.SidebarController.sidebarVerticalTabsEnabled;
+     /* Add 1 to tools and extensions count for "Customize sidebar" option */
+     let enabledToolsAndExtensionsCount =
+       this.enabledToolsAndExtensionsCount() + 1;
+@@ -916,12 +921,14 @@ export default class SidebarMain extends MozLitElement {
+             this.expanded) &&
+             window.SidebarController.sidebarRevampVisibility !==
+               "expand-on-hover" &&
+-            window.SidebarController.sidebarVerticalTabsEnabled,
++            window.SidebarController.sidebarVerticalTabsEnabled &&
++            !opzHideTools,
+           () => html`${this.toolsSplitter}`
+         )}
+         <div
+           class="buttons-wrapper"
+           ?overflowing=${this.shouldShowOverflowButton}
++          ?opz-hide-tools=${opzHideTools}
+         >
+           <button-group
+             class="tools-and-extensions actions-list"

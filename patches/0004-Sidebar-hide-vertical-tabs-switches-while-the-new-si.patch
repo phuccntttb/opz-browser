@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sat, 7 Nov 2026 12:03:01 +0700
+Subject: [PATCH] Sidebar: hide vertical-tabs switches while the new sidebar is
+ off
+
+---
+ browser/components/customizableui/ToolbarContextMenu.sys.mjs | 5 +++--
+ browser/components/preferences/config/tabs-browsing.mjs      | 2 ++
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/browser/components/customizableui/ToolbarContextMenu.sys.mjs b/browser/components/customizableui/ToolbarContextMenu.sys.mjs
+index c87bd45858..c96e1b61a8 100644
+--- a/browser/components/customizableui/ToolbarContextMenu.sys.mjs
++++ b/browser/components/customizableui/ToolbarContextMenu.sys.mjs
+@@ -252,7 +252,8 @@ export var ToolbarContextMenu = {
+     let toggleVerticalTabsItem = document.getElementById(
+       "toolbar-context-toggle-vertical-tabs"
+     );
+-    toggleVerticalTabsItem.hidden = !showSidebarActions;
++    // Opz: vertical tabs need the new sidebar; hide the switch without it.
++    toggleVerticalTabsItem.hidden = !showSidebarActions || !sidebarRevampEnabled;
+     document.l10n.setAttributes(
+       toggleVerticalTabsItem,
+       gBrowser.tabContainer?.verticalMode
+@@ -266,7 +267,7 @@ export var ToolbarContextMenu = {
+       (!["tabbrowser-tabs", "sidebar-button"].includes(toolbarItem?.id) &&
+         gBrowser.tabContainer?.verticalMode);
+     document.getElementById("sidebarRevampSeparator").hidden =
+-      !showSidebarActions || isVerticalTabStripMenu;
++      !showSidebarActions || isVerticalTabStripMenu || !sidebarRevampEnabled;
+     document.getElementById("customizationMenuSeparator").hidden =
+       toolbarItem?.id == "tabbrowser-tabs" ||
+       (toolbarItem?.localName == "toolbarspring" &&
+diff --git a/browser/components/preferences/config/tabs-browsing.mjs b/browser/components/preferences/config/tabs-browsing.mjs
+index 4f4aa1a0d9..eb84343b91 100644
+--- a/browser/components/preferences/config/tabs-browsing.mjs
++++ b/browser/components/preferences/config/tabs-browsing.mjs
+@@ -617,6 +617,8 @@ Preferences.addSetting({
+ Preferences.addSetting({
+   id: "browserLayoutRadioGroup",
+   pref: "sidebar.verticalTabs",
++  // Opz: vertical tabs need the new sidebar (sidebar.revamp), off by default.
++  visible: () => Services.prefs.getBoolPref("sidebar.revamp", false),
+   get: prefValue => (prefValue ? "true" : "false"),
+   set: value => value === "true",
+ });

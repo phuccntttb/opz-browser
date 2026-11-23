@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 15:25:39 +0700
+Subject: [PATCH] App menu: drop Customize toolbar from More tools
+
+---
+ browser/base/content/appmenu-viewcache.inc.xhtml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/browser/base/content/appmenu-viewcache.inc.xhtml b/browser/base/content/appmenu-viewcache.inc.xhtml
+index b978a5dd3d..526c0345a4 100644
+--- a/browser/base/content/appmenu-viewcache.inc.xhtml
++++ b/browser/base/content/appmenu-viewcache.inc.xhtml
+@@ -491,6 +491,7 @@
+     <vbox class="panel-subview-body">
+       <toolbarbutton id="appmenu-moreTools-button"
+                      class="subviewbutton"
++                     hidden="true"
+                      data-l10n-id="appmenu-customizetoolbar"
+                      command="cmd_CustomizeToolbars"/>
+       <toolbarbutton id="appmenu-abouttranslations-button"

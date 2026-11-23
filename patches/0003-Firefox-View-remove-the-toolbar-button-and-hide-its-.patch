@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sat, 7 Nov 2026 12:02:52 +0700
+Subject: [PATCH] Firefox View: remove the toolbar button and hide its menu
+ entries
+
+---
+ browser/base/content/browser-menubar.inc.xhtml         |  2 ++
+ .../customizableui/CustomizableWidgets.sys.mjs         | 10 ++--------
+ .../tabbrowser/content/browser-allTabsMenu.inc.xhtml   |  4 +++-
+ 3 files changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/browser/base/content/browser-menubar.inc.xhtml b/browser/base/content/browser-menubar.inc.xhtml
+index db2d3bd1b6..4576140416 100644
+--- a/browser/base/content/browser-menubar.inc.xhtml
++++ b/browser/base/content/browser-menubar.inc.xhtml
+@@ -381,7 +381,9 @@
+                 hidden="true"
+                 data-l10n-id="menu-tools-fxa-re-auth"/>
+ 
++      <!-- Opz: Firefox View is hidden. -->
+       <menuitem id="menu_openFirefoxView"
++                hidden="true"
+                 data-l10n-id="menu-tools-firefox-view"/>
+       <menuitem id="menu_editPDF"
+                 command="cmd_editPDF" data-l10n-id="menu-tools-edit-pdf"/>
+diff --git a/browser/components/customizableui/CustomizableWidgets.sys.mjs b/browser/components/customizableui/CustomizableWidgets.sys.mjs
+index 488c6036dd..b0b752236a 100644
+--- a/browser/components/customizableui/CustomizableWidgets.sys.mjs
++++ b/browser/components/customizableui/CustomizableWidgets.sys.mjs
+@@ -820,14 +820,8 @@ if (Services.prefs.getBoolPref("browser.tabs.groups.alternateMenu", false)) {
+   });
+ }
+ 
+-CustomizableWidgets.push({
+-  id: "firefox-view-button",
+-  l10nId: "toolbar-button-firefox-view-3",
+-  onCreated(node) {
+-    node.setAttribute("role", "button");
+-    node.setAttribute("aria-pressed", "false");
+-  },
+-});
++// Opz: no Firefox View button (not even in the Customize palette).
++// FirefoxViewHandler only touches the button through optional chaining.
+ 
+ if (Services.prefs.getBoolPref("browser.mini-window.enabled", false)) {
+   CustomizableWidgets.push({
+diff --git a/browser/components/tabbrowser/content/browser-allTabsMenu.inc.xhtml b/browser/components/tabbrowser/content/browser-allTabsMenu.inc.xhtml
+index 99098c976a..4df42990d4 100644
+--- a/browser/components/tabbrowser/content/browser-allTabsMenu.inc.xhtml
++++ b/browser/components/tabbrowser/content/browser-allTabsMenu.inc.xhtml
+@@ -30,9 +30,11 @@
+         <vbox id="allTabsMenu-dropIndicator" collapsed="true"/>
+       </vbox>
+       <vbox id="allTabsMenu-allTabsView-tabs" class="panel-subview-body"/>
+-      <toolbarseparator/>
++      <!-- Opz: Firefox View is hidden. -->
++      <toolbarseparator hidden="true"/>
+       <toolbarbutton id="allTabsMenu-viewAllTabs"
+                      class="subviewbutton"
++                     hidden="true"
+                      data-l10n-id="all-tabs-menu-view-all-tabs"/>
+     </vbox>
+   </panelview>

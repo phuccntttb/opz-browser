@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 20 Nov 2026 23:15:27 +0700
+Subject: [PATCH] Updater: trust Opz's MAR signing certificates
+
+The updater (full builds, mozconfig.full) checks update packages against
+opz-certs/primary.der and secondary.der instead of Mozilla's certificates.
+opz-certs is an overlay of <repo>/updates/certs made by scripts/apply.sh.
+---
+ toolkit/mozapps/update/updater/moz.build | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/toolkit/mozapps/update/updater/moz.build b/toolkit/mozapps/update/updater/moz.build
+index 1f997ef0ca..339d455cd7 100644
+--- a/toolkit/mozapps/update/updater/moz.build
++++ b/toolkit/mozapps/update/updater/moz.build
+@@ -107,7 +107,14 @@ xpcshell_cert.script = "gen_cert_header.py:create_header"
+ dep1_cert.script = "gen_cert_header.py:create_header"
+ dep2_cert.script = "gen_cert_header.py:create_header"
+ 
+-if CONFIG["MOZ_UPDATE_CHANNEL"] in ("beta", "release", "esr"):
++# Opz: the updater trusts only Opz's MAR signing certificates, whatever the
++# update channel. opz-certs/ is <repo>/updates/certs (overlay made by
++# scripts/apply.sh); the private keys never leave the build machine
++# (scripts/mar-keys.sh).
++if True:
++    primary_cert.inputs += ["opz-certs/primary.der"]
++    secondary_cert.inputs += ["opz-certs/secondary.der"]
++elif CONFIG["MOZ_UPDATE_CHANNEL"] in ("beta", "release", "esr"):
+     primary_cert.inputs += ["release_primary.der"]
+     secondary_cert.inputs += ["release_secondary.der"]
+ elif CONFIG["MOZ_UPDATE_CHANNEL"] in (

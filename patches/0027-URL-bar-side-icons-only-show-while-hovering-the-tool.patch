@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 19:32:43 +0700
+Subject: [PATCH] URL bar: side icons only show while hovering the toolbar
+
+---
+ browser/themes/shared/urlbar.css | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 066bab0721..b328eaae08 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1819,3 +1819,30 @@ toolbar[inactive="true"] .urlbar,
+     animation: none;
+   }
+ }
++
++/* Opz: while the address bar is idle, the icons on its sides (site
++ * information / permissions on the left, page actions on the right) are
++ * invisible until the pointer is over the toolbar. They keep their place, so nothing
++ * shifts when they appear. Once the bar is in use they are always shown. */
++:root:not([customizing]) #urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode]) {
++  & #identity-box,
++  & #page-action-buttons {
++    opacity: 0;
++    transition: opacity 150ms ease;
++  }
++
++  &:hover,
++  &:has(#identity-box[open], #page-action-buttons [open], #page-action-buttons [panelopen]) {
++    & #identity-box,
++    & #page-action-buttons {
++      opacity: 1;
++    }
++  }
++}
++
++:root:not([customizing]) #nav-bar:hover #urlbar {
++  & #identity-box,
++  & #page-action-buttons {
++    opacity: 1;
++  }
++}

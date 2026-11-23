@@ -1,0 +1,482 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 14:45:32 +0700
+Subject: [PATCH] Sidebar: Containers button at the bottom of the expanded tab
+ column
+
+---
+ .../content/OpzContainersPanel.mjs            | 269 ++++++++++++++++++
+ .../content/opz-containers-panel.css          |  53 ++++
+ browser/components/contextualidentity/jar.mn  |   2 +
+ browser/components/sidebar/sidebar-main.css   |  26 +-
+ browser/components/sidebar/sidebar-main.mjs   |  39 ++-
+ 5 files changed, 377 insertions(+), 12 deletions(-)
+ create mode 100644 browser/components/contextualidentity/content/OpzContainersPanel.mjs
+ create mode 100644 browser/components/contextualidentity/content/opz-containers-panel.css
+
+diff --git a/browser/components/contextualidentity/content/OpzContainersPanel.mjs b/browser/components/contextualidentity/content/OpzContainersPanel.mjs
+new file mode 100644
+index 0000000000..ff4228f862
+--- /dev/null
++++ b/browser/components/contextualidentity/content/OpzContainersPanel.mjs
+@@ -0,0 +1,269 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++import { ContainerEditor } from "chrome://browser/content/usercontext/ContainerEditor.mjs";
++
++const lazy = {};
++ChromeUtils.defineESModuleGetters(lazy, {
++  ContextualIdentityService:
++    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
++});
++
++const HTML_NS = "http://www.w3.org/1999/xhtml";
++const PANEL_ID = "opz-containers-panel";
++const IDENTITY_CHANGE_TOPICS = [
++  "contextual-identity-created",
++  "contextual-identity-updated",
++  "contextual-identity-deleted",
++  "contextual-identity-reordered",
++];
++const CHECKBOXES = [
++  {
++    l10nId: "containers-new-tab-check3",
++    pref: "privacy.userContext.newTabContainerOnLeftClick.enabled",
++  },
++  {
++    l10nId: "containers-external-links-check",
++    pref: "browser.link.force_default_user_context_id_for_external_opens",
++  },
++];
++
++/**
++ * Opz: the container settings of about:preferences#containers (list, reorder,
++ * edit, delete, add, the two checkboxes) in a panel anchored to the
++ * Containers button at the bottom of the vertical tab column.
++ */
++export class OpzContainersPanel {
++  static l10n = new Localization([
++    "browser/preferences/preferences.ftl",
++    "browser/preferences/containers.ftl",
++  ]);
++
++  /**
++   * @param {Window} win
++   * @param {Element} button
++   *   Gets aria-expanded while the panel is open.
++   * @param {Element} anchor
++   *   The panel opens at its end edge, bottoms aligned.
++   */
++  static toggle(win, button, anchor) {
++    let panel = win.document.getElementById(PANEL_ID);
++    if (panel && (panel.state == "open" || panel.state == "showing")) {
++      panel.hidePopup();
++      return;
++    }
++    win.opzContainersPanel ??= new OpzContainersPanel(win);
++    win.opzContainersPanel.open(button, anchor);
++  }
++
++  constructor(win) {
++    this.win = win;
++    this.doc = win.document;
++    this.observe = () => {
++      if (!this.editor) {
++        this.showList();
++      }
++    };
++
++    let link = this.doc.createElementNS(HTML_NS, "link");
++    link.rel = "stylesheet";
++    link.href = "chrome://browser/content/usercontext/opz-containers-panel.css";
++    this.doc.head.append(link);
++
++    this.panel = this.doc.createXULElement("panel");
++    this.panel.id = PANEL_ID;
++    this.panel.className = "panel-no-padding";
++    this.panel.setAttribute("type", "arrow");
++    this.panel.setAttribute("orient", "vertical");
++    this.panel.setAttribute("role", "dialog");
++    this.body = this.doc.createElementNS(HTML_NS, "div");
++    this.body.className = "opz-containers-body";
++    this.panel.append(this.body);
++    this.doc.getElementById("mainPopupSet").append(this.panel);
++
++    this.panel.addEventListener("popuphidden", e => {
++      if (e.target != this.panel) {
++        return;
++      }
++      for (let topic of IDENTITY_CHANGE_TOPICS) {
++        Services.obs.removeObserver(this.observe, topic);
++      }
++      this.button?.removeAttribute("aria-expanded");
++      this.editor = null;
++      this.body.replaceChildren();
++    });
++  }
++
++  async open(button, anchor) {
++    this.button = button;
++    await this.showList();
++    for (let topic of IDENTITY_CHANGE_TOPICS) {
++      Services.obs.addObserver(this.observe, topic);
++    }
++    button.setAttribute("aria-expanded", "true");
++    this.panel.openPopup(anchor, "end_after");
++  }
++
++  async format(ids) {
++    let messages = await OpzContainersPanel.l10n.formatMessages(ids);
++    return messages.map(m =>
++      Object.fromEntries([
++        ["value", m.value],
++        ...(m.attributes ?? []).map(a => [a.name, a.value]),
++      ])
++    );
++  }
++
++  el(tag, attrs = {}) {
++    let el = this.doc.createElementNS(HTML_NS, tag);
++    for (let [name, value] of Object.entries(attrs)) {
++      el.setAttribute(name, value);
++    }
++    return el;
++  }
++
++  async showList() {
++    this.editor = null;
++    let [card, add, edit, remove, ...checks] = await this.format([
++      "containers-card-header2",
++      "containers-add-button2",
++      "containers-settings-button2",
++      "containers-remove-button3",
++      ...CHECKBOXES.map(c => c.l10nId),
++    ]);
++
++    let title = this.el("h1", { class: "opz-containers-title" });
++    title.textContent = card.label;
++
++    let list = this.el("moz-box-group", { type: "reorderable-list" });
++    for (let identity of lazy.ContextualIdentityService.getPublicIdentities()) {
++      let id = identity.userContextId;
++      let item = this.el("moz-box-item", {
++        label: lazy.ContextualIdentityService.getUserContextLabel(id),
++        iconsrc: lazy.ContextualIdentityService.getContainerIconURL(
++          identity.icon
++        ),
++        class: `containers-identity-item identity-color-${identity.color}`,
++        value: id,
++      });
++      let editButton = this.el("moz-button", {
++        slot: "actions",
++        type: "icon ghost",
++        iconsrc: "chrome://global/skin/icons/edit-outline.svg",
++        title: edit.title,
++        "aria-label": edit.title,
++      });
++      editButton.addEventListener("click", () => this.showEditor(id));
++      let removeButton = this.el("moz-button", {
++        slot: "actions",
++        type: "icon ghost",
++        iconsrc: "chrome://global/skin/icons/delete.svg",
++        title: remove.title,
++        "aria-label": remove.title,
++      });
++      removeButton.addEventListener("click", () => this.remove(id));
++      item.append(editButton, removeButton);
++      list.append(item);
++    }
++    list.addEventListener("reorder", e => {
++      let { draggedElement, insertAt } = e.detail;
++      lazy.ContextualIdentityService.move(
++        [parseInt(draggedElement.getAttribute("value"), 10)],
++        insertAt
++      );
++    });
++
++    let addButton = this.el("moz-button", { label: add.label });
++    addButton.addEventListener("click", () => this.showEditor(null));
++
++    let checkboxes = CHECKBOXES.map(({ pref }, i) => {
++      let checkbox = this.el("moz-checkbox", { label: checks[i].label });
++      checkbox.checked = Services.prefs.getBoolPref(pref, false);
++      checkbox.addEventListener("change", () =>
++        Services.prefs.setBoolPref(pref, checkbox.checked)
++      );
++      return checkbox;
++    });
++
++    this.body.replaceChildren(title, addButton, list, ...checkboxes);
++  }
++
++  async showEditor(userContextId) {
++    let identity = null;
++    let titleArgs = {};
++    if (userContextId) {
++      identity =
++        lazy.ContextualIdentityService.getPublicIdentityFromId(userContextId);
++      identity.name =
++        lazy.ContextualIdentityService.getUserContextLabel(userContextId);
++      titleArgs = { name: identity.name };
++    }
++    let [heading, save, cancel] = await this.format([
++      userContextId
++        ? { id: "containers-window-update-settings3", args: titleArgs }
++        : "containers-window-new3",
++      "containers-dialog2",
++      "containers-panel-cancel-button",
++    ]);
++
++    let title = this.el("h1", { class: "opz-containers-title" });
++    title.textContent = heading.title;
++    let form = this.el("div");
++    this.editor = new ContainerEditor(form, { userContextId, identity });
++    this.editor.render();
++
++    let footer = this.el("moz-button-group", { class: "panel-footer" });
++    let cancelButton = this.el("moz-button", { label: cancel.label });
++    let saveButton = this.el("moz-button", {
++      type: "primary",
++      label: save.buttonlabelaccept,
++    });
++    cancelButton.addEventListener("click", () => this.showList());
++    saveButton.addEventListener("click", () => {
++      this.editor.commit();
++      this.showList();
++    });
++    let updateValidity = () => (saveButton.disabled = !this.editor.isValid);
++    this.editor.form.addEventListener("input", updateValidity);
++    updateValidity();
++    footer.append(cancelButton, saveButton);
++
++    this.body.replaceChildren(title, form, footer);
++    this.editor.focus();
++  }
++
++  async remove(userContextId) {
++    let count =
++      lazy.ContextualIdentityService.countContainerTabs(userContextId);
++    if (count > 0) {
++      let [title, message, ok, cancel] = (
++        await this.format([
++          "containers-remove-alert-title",
++          { id: "containers-remove-alert-msg", args: { count } },
++          "containers-remove-ok-button",
++          "containers-remove-cancel-button",
++        ])
++      ).map(m => m.value);
++      let flags =
++        Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_0 +
++        Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_1;
++      let rv = Services.prompt.confirmEx(
++        this.win,
++        title,
++        message,
++        flags,
++        ok,
++        cancel,
++        null,
++        null,
++        {}
++      );
++      if (rv != 0) {
++        return;
++      }
++      await lazy.ContextualIdentityService.closeContainerTabs(userContextId);
++    }
++    lazy.ContextualIdentityService.remove(userContextId);
++  }
++}
+diff --git a/browser/components/contextualidentity/content/opz-containers-panel.css b/browser/components/contextualidentity/content/opz-containers-panel.css
+new file mode 100644
+index 0000000000..47fb58a81b
+--- /dev/null
++++ b/browser/components/contextualidentity/content/opz-containers-panel.css
+@@ -0,0 +1,53 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#opz-containers-panel {
++  --arrowpanel-padding: 0;
++}
++
++.opz-containers-body {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-medium);
++  box-sizing: border-box;
++  width: 24em;
++  max-height: 80vh;
++  padding: var(--space-large);
++  overflow-y: auto;
++
++  > moz-button:not([type="primary"]) {
++    align-self: flex-start;
++  }
++
++  > div > .container-editor {
++    padding: 0;
++  }
++
++  > .panel-footer {
++    margin: 0;
++    padding: 0;
++  }
++}
++
++.opz-containers-title {
++  margin: 0;
++  font-size: var(--font-size-large);
++  font-weight: var(--font-weight-bold);
++}
++
++.opz-containers-body .containers-identity-item {
++  --box-icon-start-fill: var(--identity-icon-color);
++  --box-icon-size: var(--icon-size-xlarge);
++
++  @media -moz-pref("browser.nova.enabled") {
++    --box-icon-start-fill: var(--identity-fill-color);
++    --box-icon-padding: round(up, var(--space-small), 0.5px);
++    --box-icon-border-radius: var(--border-radius-circle);
++    --box-icon-background: var(--identity-fill-tint);
++  }
++}
++
++.opz-containers-body .container-editor .swatches::part(inputs) {
++  justify-content: flex-start;
++}
+diff --git a/browser/components/contextualidentity/jar.mn b/browser/components/contextualidentity/jar.mn
+index a62ea46b32..6c261fe0fa 100644
+--- a/browser/components/contextualidentity/jar.mn
++++ b/browser/components/contextualidentity/jar.mn
+@@ -8,6 +8,8 @@ browser.jar:
+     content/browser/usercontext/container-select.mjs (content/container-select.mjs)
+     content/browser/usercontext/container-select.css (content/container-select.css)
+     content/browser/usercontext/ContainerCreationPanel.mjs (content/ContainerCreationPanel.mjs)
++    content/browser/usercontext/OpzContainersPanel.mjs (content/OpzContainersPanel.mjs)
++    content/browser/usercontext/opz-containers-panel.css (content/opz-containers-panel.css)
+ 
+ % resource usercontext-content %content/usercontext/ contentaccessible=yes
+     content/usercontext/briefcase.svg     (content/briefcase.svg)
+diff --git a/browser/components/sidebar/sidebar-main.css b/browser/components/sidebar/sidebar-main.css
+index e5e842e25c..985e1206cf 100644
+--- a/browser/components/sidebar/sidebar-main.css
++++ b/browser/components/sidebar/sidebar-main.css
+@@ -238,13 +238,25 @@
+   display: none;
+ }
+ 
+-:host([expanded]) .opz-auto-collapse-button {
++/* Opz: the Containers button sits left of the pin button and looks the same. */
++.opz-bottom-buttons {
++  display: none;
++}
++
++:host([expanded]) .opz-bottom-buttons {
++  display: flex;
++  flex: none;
++  gap: 4px;
++  margin: auto 8px 8px auto;
++}
++
++:host([expanded]) :is(.opz-auto-collapse-button, .opz-containers-button) {
+   display: block;
+   flex: none;
+   box-sizing: border-box;
+   width: 32px;
+   height: 32px;
+-  margin: auto 8px 8px auto;
++  margin: 0;
+   padding: 0;
+   border: none;
+   border-radius: var(--border-radius-medium);
+@@ -260,7 +272,8 @@
+   transition: opacity 150ms ease;
+ 
+   :host(:hover) &,
+-  &:focus-visible {
++  &:focus-visible,
++  &[aria-expanded="true"] {
+     opacity: 1;
+   }
+ 
+@@ -268,7 +281,12 @@
+     background-color: color-mix(in srgb, currentColor 10%, transparent);
+   }
+ 
+-  &[aria-pressed="true"] {
++  &[aria-pressed="true"],
++  &[aria-expanded="true"] {
+     background-color: color-mix(in srgb, currentColor 18%, transparent);
+   }
+ }
++
++:host([expanded]) .opz-containers-button {
++  background-image: url("resource://usercontext-content/fence.svg");
++}
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index 062ac7cbb2..6b06774b58 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -55,7 +55,12 @@ export default class SidebarMain extends MozLitElement {
+   get fluentStrings() {
+     if (!this._fluentStrings) {
+       this._fluentStrings = new Localization(
+-        ["browser/sidebar.ftl", "preview/genai.ftl"],
++        [
++          "browser/sidebar.ftl",
++          "preview/genai.ftl",
++          // Opz: "Manage containers" for the Containers button.
++          "toolkit/global/contextual-identity.ftl",
++        ],
+         true
+       );
+     }
+@@ -981,19 +986,37 @@ export default class SidebarMain extends MozLitElement {
+             const label = pinned
+               ? "Turn on auto-collapse"
+               : "Turn off auto-collapse";
+-            return html`<button
+-              class="opz-auto-collapse-button"
+-              title=${label}
+-              aria-label=${label}
+-              aria-pressed=${pinned}
+-              @click=${this.opzToggleAutoCollapse}
+-            ></button>`;
++            const containersLabel = this.fluentStrings
++              .formatMessagesSync(["user-context-manage-containers2"])?.[0]
++              ?.attributes?.find(attr => attr.name === "label")?.value;
++            return html`<div class="opz-bottom-buttons">
++              <button
++                class="opz-containers-button"
++                title=${containersLabel}
++                aria-label=${containersLabel}
++                @click=${this.opzOpenContainers}
++              ></button>
++              <button
++                class="opz-auto-collapse-button"
++                title=${label}
++                aria-label=${label}
++                aria-pressed=${pinned}
++                @click=${this.opzToggleAutoCollapse}
++              ></button>
++            </div>`;
+           }
+         )}
+       </div>
+     `;
+   }
+ 
++  opzOpenContainers(event) {
++    const { OpzContainersPanel } = ChromeUtils.importESModule(
++      "chrome://browser/content/usercontext/OpzContainersPanel.mjs"
++    );
++    OpzContainersPanel.toggle(window, event.currentTarget, this);
++  }
++
+   opzToggleAutoCollapse() {
+     const controller = window.SidebarController;
+     const autoCollapse = controller.sidebarRevampVisibility === "expand-on-hover";

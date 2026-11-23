@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 18 Nov 2026 16:55:04 +0700
+Subject: [PATCH] Toolbar: back/forward/reload and window buttons only show
+ while hovering the toolbar
+
+---
+ browser/themes/shared/toolbarbuttons.css | 28 ++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
+index 512decc79a..9f265e8ce8 100644
+--- a/browser/themes/shared/toolbarbuttons.css
++++ b/browser/themes/shared/toolbarbuttons.css
+@@ -851,3 +851,31 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+     }
+   }
+ }
++
++/* Opz: the back, forward and reload buttons and the window buttons are
++ * invisible until the pointer is over the toolbar, like the buttons on its
++ * right. They keep their place. */
++:root:not([customizing]) #nav-bar {
++  & #back-button,
++  & #forward-button,
++  & #stop-reload-button,
++  & .titlebar-buttonbox-container {
++    opacity: 0;
++    transition: opacity 150ms ease;
++  }
++
++  &:hover,
++  &:focus-within,
++  &:has(toolbarbutton[open], toolbarbutton[checked]) {
++    & #back-button,
++    & #forward-button,
++    & #stop-reload-button,
++    & .titlebar-buttonbox-container {
++      opacity: 1;
++    }
++
++    & :is(#back-button, #forward-button, #stop-reload-button)[disabled] {
++      opacity: var(--toolbarbutton-opacity-disabled);
++    }
++  }
++}

@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 17:53:08 +0700
+Subject: [PATCH] Tabs: Expand sidebar on hover toggle in the tab context menu
+
+---
+ browser/components/sidebar/browser-sidebar.js | 25 ++++++++++++++++
+ .../tabbrowser/content/tab-context-menu.js    | 30 +++++++++++++++++++
+ 2 files changed, 55 insertions(+)
+
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index 4a9ba07cd4..c3b4743857 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -2629,6 +2629,11 @@ var SidebarController = {
+     if (this._state.launcherExpanded) {
+       return;
+     }
++    // Opz: "Expand sidebar on hover" is off in the tab context menu, so the
++    // collapsed column stays collapsed.
++    if (!this.opzExpandOnHover) {
++      return;
++    }
+     if (this._ongoingAnimations.length || this._isMenuPopupOpen()) {
+       return;
+     }
+@@ -2845,6 +2850,26 @@ ChromeUtils.defineESModuleGetters(SidebarController, {
+     "chrome://browser/content/sidebar/sidebar-permissions.mjs",
+ });
+ 
++// Opz: whether hovering the collapsed tab column expands it.
++XPCOMUtils.defineLazyPreferenceGetter(
++  SidebarController,
++  "opzExpandOnHover",
++  "opz.sidebar.expandOnHover",
++  true,
++  (_aPreference, _previousValue, newValue) => {
++    if (
++      newValue &&
++      !SidebarController.uninitializing &&
++      !SidebarController.inSingleTabWindow &&
++      SidebarController._state &&
++      SidebarController.sidebarRevampVisibility === "expand-on-hover"
++    ) {
++      // Expand right away if the pointer is already over the column.
++      SidebarController._reconcileHoverState();
++    }
++  }
++);
++
+ // Add getters related to the position here, since we will want them
+ // available for both startDelayedLoad and init.
+ XPCOMUtils.defineLazyPreferenceGetter(
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index 0a4c2dbeb5..d096ae7acc 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -676,6 +676,8 @@ var TabContextMenu = {
+     OpzPrivateTabs.updateTabContextMenu(window, this.contextTab);
+     // Opz: "New Container Tab" under the new tab items.
+     this.opzUpdateNewContainerTabMenu();
++    // Opz: "Expand sidebar on hover" at the bottom.
++    this.opzUpdateAutoExpandItem(aPopupMenu);
+     this.contextTab.addEventListener("TabAttrModified", this);
+     aPopupMenu.addEventListener("popuphidden", this);
+ 
+@@ -1349,6 +1351,34 @@ var TabContextMenu = {
+     }
+   },
+ 
++  // Opz: whether hovering the collapsed tab column expands it. This does not
++  // pin or collapse the column; it only decides whether hover expands it.
++  opzUpdateAutoExpandItem(aPopupMenu) {
++    let item = document.getElementById("opz_context_autoExpand");
++    if (!item) {
++      let separator = document.createXULElement("menuseparator");
++      separator.id = "opz_context_autoExpandSeparator";
++      item = document.createXULElement("menuitem");
++      item.id = "opz_context_autoExpand";
++      item.setAttribute("type", "checkbox");
++      document.l10n.setAttributes(item, "expand-sidebar-on-hover");
++      item.addEventListener("command", () =>
++        Services.prefs.setBoolPref(
++          "opz.sidebar.expandOnHover",
++          !Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
++        )
++      );
++      aPopupMenu.append(separator, item);
++    }
++    let sidebarMain = document.querySelector("sidebar-main");
++    item.hidden = item.previousElementSibling.hidden =
++      !sidebarMain || !SidebarController.sidebarVerticalTabsEnabled;
++    item.toggleAttribute(
++      "checked",
++      Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
++    );
++  },
++
+   // Opz: a new tab in a container, like the New Tab button's popup.
+   opzUpdateNewContainerTabMenu() {
+     let menu = document.getElementById("opz_context_newContainerTab");

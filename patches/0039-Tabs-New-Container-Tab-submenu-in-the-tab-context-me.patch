@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 17:16:44 +0700
+Subject: [PATCH] Tabs: New Container Tab submenu in the tab context menu
+
+---
+ .../tabbrowser/content/tab-context-menu.js    | 35 +++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index 00f05167f0..0a4c2dbeb5 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -674,6 +674,8 @@ var TabContextMenu = {
+     this.contextTab = triggerTab || gBrowser.selectedTab;
+     // Opz: "New private tab in this session".
+     OpzPrivateTabs.updateTabContextMenu(window, this.contextTab);
++    // Opz: "New Container Tab" under the new tab items.
++    this.opzUpdateNewContainerTabMenu();
+     this.contextTab.addEventListener("TabAttrModified", this);
+     aPopupMenu.addEventListener("popuphidden", this);
+ 
+@@ -1347,6 +1349,39 @@ var TabContextMenu = {
+     }
+   },
+ 
++  // Opz: a new tab in a container, like the New Tab button's popup.
++  opzUpdateNewContainerTabMenu() {
++    let menu = document.getElementById("opz_context_newContainerTab");
++    if (!menu) {
++      menu = document.createXULElement("menu");
++      menu.id = "opz_context_newContainerTab";
++      document.l10n.setAttributes(menu, "menu-file-new-container-tab");
++      let popup = document.createXULElement("menupopup");
++      popup.addEventListener("popupshowing", event => {
++        if (event.target != popup) {
++          return;
++        }
++        createUserContextMenu(event, {
++          showManageContainers: false,
++          containerSource: "tab_context_menu",
++          opzOnContainerCreated: userContextId =>
++            openTrustedLinkIn(BROWSER_NEW_TAB_URL, "tab", {
++              userContextId,
++              eventDetail: { containerSource: "tab_context_menu" },
++            }),
++        });
++      });
++      menu.append(popup);
++      (
++        document.getElementById("opz_context_newPrivateTabInSession") ??
++        document.getElementById("context_openANewTab")
++      ).after(menu);
++    }
++    menu.hidden =
++      !Services.prefs.getBoolPref("privacy.userContext.enabled", false) ||
++      PrivateBrowsingUtils.isWindowPrivate(window);
++  },
++
+   createReopenInContainerMenu(event) {
+     let tabs = this.contextTabs;
+     createUserContextMenu(event, {

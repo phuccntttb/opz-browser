@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 20:15:25 +0700
+Subject: [PATCH] Tabs: in the expanded column the private icon also sits where
+ the close button is
+
+---
+ browser/themes/shared/tabbrowser/tabs.css | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/browser/themes/shared/tabbrowser/tabs.css b/browser/themes/shared/tabbrowser/tabs.css
+index 9861a3fece..19cb894829 100644
+--- a/browser/themes/shared/tabbrowser/tabs.css
++++ b/browser/themes/shared/tabbrowser/tabs.css
+@@ -3630,13 +3630,17 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+   }
+ }
+ 
+-/* Opz: in the expanded column the container icon sits where the close button
+-   is; hovering the tab shows the close button in its place. */
+-#tabbrowser-tabs[orient="vertical"][expanded] .tabbrowser-tab[usercontextid]:not([opz-private]) {
++/* Opz: in the expanded column the container or private icon sits where the
++   close button is; hovering the tab shows the close button in its place. */
++#tabbrowser-tabs[orient="vertical"][expanded] .tabbrowser-tab:is([usercontextid], [opz-private]) {
+   .tab-icon-stack::after {
+     display: none;
+   }
+ 
++  &[opz-private] {
++    --identity-icon: url("chrome://browser/skin/privateBrowsing.svg");
++  }
++
+   > .tab-stack > .tab-content::after {
+     content: "";
+     flex: none;

@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 13 Nov 2026 14:12:22 +0700
+Subject: [PATCH] URL bar: Escape closes the card together with its results
+
+---
+ browser/components/urlbar/content/UrlbarChildController.mjs | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/browser/components/urlbar/content/UrlbarChildController.mjs b/browser/components/urlbar/content/UrlbarChildController.mjs
+index 9ec7cc7dc9..bca976567f 100644
+--- a/browser/components/urlbar/content/UrlbarChildController.mjs
++++ b/browser/components/urlbar/content/UrlbarChildController.mjs
+@@ -436,6 +436,11 @@ export class UrlbarChildController {
+         if (executeAction) {
+           if (this.view.isOpen) {
+             this.view.close();
++            // Opz: the card goes away with its results in one press.
++            if (this.window.gBrowser && this.input.sapName != "searchbar") {
++              this.input.handleRevert();
++              this.window.gBrowser.selectedBrowser.focus();
++            }
+           } else if (
+             // An in-page urlbar returns focus to the host page.
+             !this.window.gBrowser &&

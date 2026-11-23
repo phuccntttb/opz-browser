@@ -1,0 +1,1096 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 18 Nov 2026 17:57:49 +0700
+Subject: [PATCH] Tabs: private tabs in hidden one-off containers, next to
+ normal tabs
+
+"New private tab" in the New Tab button's popup opens the address bar card over the current tab and puts the pick in a new tab in a new hidden container (a userContextId from a range ContextualIdentityService never hands out, with no identity). Tabs opened from it share its container, and "New private tab in this session" in a private tab's context menu opens another tab in the same one. A new tab of a private session is moved next to the session's other tabs, and each session gets one outline around all of its tabs plus a mask badge on each icon, in the session's color, collapsed and expanded.
+
+Private tabs keep no global history (disableglobalhistory on their browser), are left out of session store files, closed tabs and closed windows, tab sync, urlbar search and input history, form history and download history. When the last tab of a hidden container is gone its data is wiped; ids that may hold data are listed in opz-private-tabs.json in the profile and wiped at the next start after a crash. The logic is in browser/modules/OpzPrivateTabs.sys.mjs.
+---
+ browser/actors/ContentSearchParent.sys.mjs    |   6 +-
+ browser/base/content/browser-init.js          |   2 +
+ browser/base/content/browser.js               |   3 +
+ browser/base/content/browser.js.globals       |   1 +
+ browser/base/content/nsContextMenu.sys.mjs    |   9 +
+ .../components/search/content/searchbar.js    |   4 +
+ .../sessionstore/SessionSaver.sys.mjs         |   3 +
+ .../sessionstore/SessionStore.sys.mjs         |  12 +-
+ .../components/tabbrowser/Tabbrowser.sys.mjs  |   3 +
+ .../tabbrowser/content/tab-context-menu.js    |   2 +
+ .../urlbar/UrlbarParentController.sys.mjs     |  12 +-
+ .../urlbar/content/UrlbarChildController.mjs  |   2 +
+ .../locales/en-US/browser/opzPrivateTabs.ftl  |  13 +
+ browser/modules/OpzPrivateTabs.sys.mjs        | 523 ++++++++++++++++++
+ browser/modules/URILoadingHelper.sys.mjs      |   4 +
+ browser/modules/moz.build                     |   1 +
+ browser/themes/shared/tabbrowser/tabs.css     |  59 ++
+ services/sync/modules/engines/tabs.sys.mjs    |  10 +-
+ .../downloads/DownloadHistory.sys.mjs         |  16 +-
+ .../downloads/DownloadIntegration.sys.mjs     |   7 +
+ .../satchel/FormHistoryParent.sys.mjs         |   9 +
+ .../components/thumbnails/PageThumbs.sys.mjs  |   4 +
+ 22 files changed, 696 insertions(+), 9 deletions(-)
+ create mode 100644 browser/locales/en-US/browser/opzPrivateTabs.ftl
+ create mode 100644 browser/modules/OpzPrivateTabs.sys.mjs
+
+diff --git a/browser/actors/ContentSearchParent.sys.mjs b/browser/actors/ContentSearchParent.sys.mjs
+index 60758375a7..c2a8e73895 100644
+--- a/browser/actors/ContentSearchParent.sys.mjs
++++ b/browser/actors/ContentSearchParent.sys.mjs
+@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
+   DEFAULT_FORM_HISTORY_PARAM:
+     "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
+   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+   SearchSuggestionController:
+@@ -323,7 +324,10 @@ export let ContentSearch = {
+       // isBrowserPrivate assumes that the passed-in browser has all the normal
+       // properties, which won't be true if the browser has been destroyed.
+       // That may be the case here due to the asynchronous nature of messaging.
+-      isPrivate = lazy.PrivateBrowsingUtils.isBrowserPrivate(browser);
++      isPrivate =
++        lazy.PrivateBrowsingUtils.isBrowserPrivate(browser) ||
++        // Opz: nor for private tabs.
++        lazy.OpzPrivateTabs.isPrivateBrowser(browser);
+     } catch (err) {
+       return false;
+     }
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index a483f190e8..5c16ea235b 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -403,6 +403,8 @@ var gBrowserInit = {
+       "TranslationsParent:OfferTranslation",
+       FullPageTranslationsPanel
+     );
++    // Opz: private tabs.
++    OpzPrivateTabs.initWindow(window);
+     gBrowser.tabContainer.addEventListener("TabSelect", () => {
+       FullPageTranslationsPanel.onLocationChange(gBrowser.selectedBrowser);
+     });
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index 7ce8e235dd..ba9a601b03 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -55,6 +55,7 @@ ChromeUtils.defineESModuleGetters(this, {
+   nsContextMenu: "chrome://browser/content/nsContextMenu.sys.mjs",
+   OpenSearchManager:
+     "moz-src:///browser/components/search/OpenSearchManager.sys.mjs",
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   PageActions: "resource:///modules/PageActions.sys.mjs",
+   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
+   PanelMultiView:
+@@ -1577,6 +1578,8 @@ function CreateContainerTabMenu(event) {
+     showDefaultTab: true,
+     containerSource: "new_tab_button",
+   });
++  // Opz: "New private tab" right under "New Tab".
++  OpzPrivateTabs.addNewTabMenuItem(window, event.target);
+ }
+ 
+ function FillHistoryMenu(event) {
+diff --git a/browser/base/content/browser.js.globals b/browser/base/content/browser.js.globals
+index fcd68d653e..963e59a5a7 100644
+--- a/browser/base/content/browser.js.globals
++++ b/browser/base/content/browser.js.globals
+@@ -107,6 +107,7 @@
+   "NewTabPagePreloading",
+   "NewTabUtils",
+   "NimbusFeatures",
++  "OpzPrivateTabs",
+   "PageActions",
+   "PageThumbs",
+   "PanelMultiView",
+diff --git a/browser/base/content/nsContextMenu.sys.mjs b/browser/base/content/nsContextMenu.sys.mjs
+index bdf2c9c292..ce9e92b961 100644
+--- a/browser/base/content/nsContextMenu.sys.mjs
++++ b/browser/base/content/nsContextMenu.sys.mjs
+@@ -5,6 +5,7 @@
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AIWindow:
+     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+   BrowserSearchTelemetry:
+@@ -526,6 +527,14 @@ export class nsContextMenu {
+           containerName: label,
+         }
+       );
++      // Opz: a private tab's container has no name.
++      if (
++        lazy.OpzPrivateTabs.isPrivateUserContextId(
++          this.contentData.userContextId
++        )
++      ) {
++        document.l10n.setAttributes(item, "opz-private-tab-open-link");
++      }
+     }
+ 
+     var shouldShow =
+diff --git a/browser/components/search/content/searchbar.js b/browser/components/search/content/searchbar.js
+index bebd239f31..55e76b6041 100644
+--- a/browser/components/search/content/searchbar.js
++++ b/browser/components/search/content/searchbar.js
+@@ -392,6 +392,10 @@
+       if (
+         aData &&
+         !PrivateBrowsingUtils.isWindowPrivate(window) &&
++        // Opz: nor for private tabs.
++        !window.OpzPrivateTabs?.isPrivateBrowser(
++          window.gBrowser?.selectedBrowser
++        ) &&
+         lazy.FormHistory.enabled &&
+         aData.length <=
+           lazy.SearchSuggestionController.SEARCH_HISTORY_MAX_VALUE_LENGTH
+diff --git a/browser/components/sessionstore/SessionSaver.sys.mjs b/browser/components/sessionstore/SessionSaver.sys.mjs
+index 1b99e50731..b04b99ce90 100644
+--- a/browser/components/sessionstore/SessionSaver.sys.mjs
++++ b/browser/components/sessionstore/SessionSaver.sys.mjs
+@@ -12,6 +12,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+ 
+ const lazy = XPCOMUtils.declareLazy({
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.sys.mjs",
+   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+   RunState: "moz-src:///browser/components/sessionstore/RunState.sys.mjs",
+@@ -261,6 +262,8 @@ var SessionSaverInternal = {
+     let timerId = Glean.sessionRestore.collectData.start();
+     let state = lazy.SessionStore.getCurrentState(forceUpdateAllWindows);
+     lazy.PrivacyFilter.filterPrivateWindowsAndTabs(state);
++    // Opz: nor private tabs.
++    lazy.OpzPrivateTabs.filterSessionState(state);
+ 
+     // Make sure we only write worth saving tabs to disk.
+     lazy.SessionStore.keepOnlyWorthSavingTabs(state);
+diff --git a/browser/components/sessionstore/SessionStore.sys.mjs b/browser/components/sessionstore/SessionStore.sys.mjs
+index d2675e046a..263e2921fd 100644
+--- a/browser/components/sessionstore/SessionStore.sys.mjs
++++ b/browser/components/sessionstore/SessionStore.sys.mjs
+@@ -327,6 +327,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+ import { GlobalState } from "moz-src:///browser/components/sessionstore/GlobalState.sys.mjs";
+ 
+ const lazy = XPCOMUtils.declareLazy({
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+   AIWindow:
+@@ -2246,6 +2247,8 @@ class _SessionStore {
+ 
+         let savedState = this.getCurrentState(true);
+         lazy.PrivacyFilter.filterPrivateWindowsAndTabs(savedState);
++        // Opz: nor private tabs.
++        lazy.OpzPrivateTabs.filterSessionState(savedState);
+         LastSession.setState(savedState);
+         this.#restoreWithoutRestart = true;
+       }
+@@ -2371,6 +2374,8 @@ class _SessionStore {
+    *        a window flush).
+    */
+   #maybeSaveClosedWindow(winData, isLastWindow) {
++    // Opz: a closed window is kept without its private tabs.
++    lazy.OpzPrivateTabs.stripClosedWindow(winData);
+     // Make sure SessionStore is still running, and make sure that we
+     // haven't chosen to forget this window.
+     if (
+@@ -7729,7 +7734,8 @@ class _SessionStore {
+     ) {
+       return null;
+     }
+-    let inner = aTab.formdata?.id?.sessionData ?? entry.formdata?.id?.sessionData;
++    let inner =
++      aTab.formdata?.id?.sessionData ?? entry.formdata?.id?.sessionData;
+     try {
+       if (typeof inner == "string") {
+         inner = JSON.parse(inner);
+@@ -7818,6 +7824,10 @@ class _SessionStore {
+    *          Whether the tab state is worth saving
+    */
+   #shouldSaveTabState(aTabState) {
++    // Opz: private tabs are not kept as closed tabs or windows.
++    if (lazy.OpzPrivateTabs.isPrivateUserContextId(aTabState.userContextId)) {
++      return false;
++    }
+     // If the tab has only a transient about: history entry, no other
+     // session history, and no userTypedValue, then we don't actually want to
+     // store this tab's data.
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+index 430e1137a1..1bb6975ae7 100644
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -6,6 +6,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ 
+ const lazy = XPCOMUtils.declareLazy({
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AIWindow:
+     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+   allowTransparentBrowser: {
+@@ -3187,6 +3188,8 @@ export class Tabbrowser {
+ 
+     if (userContextId) {
+       b.setAttribute("usercontextid", userContextId);
++      // Opz: private tabs keep no history.
++      lazy.OpzPrivateTabs.onBrowserCreated(b, userContextId);
+     }
+ 
+     if (remoteType) {
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index be3252ae5f..2c8588c2e8 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -499,6 +499,8 @@ var TabContextMenu = {
+       aPopupMenu.triggerNode &&
+       (aPopupMenu.triggerNode.tab || aPopupMenu.triggerNode.closest("tab"));
+     this.contextTab = triggerTab || gBrowser.selectedTab;
++    // Opz: "New private tab in this session".
++    OpzPrivateTabs.updateTabContextMenu(window, this.contextTab);
+     this.contextTab.addEventListener("TabAttrModified", this);
+     aPopupMenu.addEventListener("popuphidden", this);
+ 
+diff --git a/browser/components/urlbar/UrlbarParentController.sys.mjs b/browser/components/urlbar/UrlbarParentController.sys.mjs
+index 7be7375183..df998e9522 100644
+--- a/browser/components/urlbar/UrlbarParentController.sys.mjs
++++ b/browser/components/urlbar/UrlbarParentController.sys.mjs
+@@ -19,6 +19,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+   AppProvidedConfigEngine:
+     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
+@@ -673,7 +674,10 @@ export class UrlbarParentController {
+     let engine = lazy.SearchService.getEngineById(engineId);
+     if (engine) {
+       lazy.UrlbarUtils.addToFormHistory(
+-        this.isPrivate || opensInPrivateWindow,
++        this.isPrivate ||
++          opensInPrivateWindow ||
++          // Opz: nor for private tabs.
++          lazy.OpzPrivateTabs.isPrivateUrlbarLoad(this.browserWindow, browser),
+         query,
+         engine.name
+       ).catch(console.error);
+@@ -1191,7 +1195,11 @@ export class UrlbarParentController {
+    *   the navigation right after.
+    */
+   addToInputHistory(url, input, { whenReady = false } = {}) {
+-    if (this.isPrivate) {
++    // Opz: nor for private tabs.
++    if (
++      this.isPrivate ||
++      lazy.OpzPrivateTabs.isPrivateUrlbarLoad(this.browserWindow)
++    ) {
+       return;
+     }
+     let promise = whenReady
+diff --git a/browser/components/urlbar/content/UrlbarChildController.mjs b/browser/components/urlbar/content/UrlbarChildController.mjs
+index bca976567f..31433add67 100644
+--- a/browser/components/urlbar/content/UrlbarChildController.mjs
++++ b/browser/components/urlbar/content/UrlbarChildController.mjs
+@@ -838,6 +838,8 @@ export class UrlbarChildController {
+     if (
+       where == "tab" &&
+       reuseEmpty &&
++      // Opz: a private pick never goes into an empty normal tab.
++      !this.#input.opzPrivateUserContextId &&
+       this.window.gBrowser?.selectedTab.isEmpty
+     ) {
+       where = "current";
+diff --git a/browser/locales/en-US/browser/opzPrivateTabs.ftl b/browser/locales/en-US/browser/opzPrivateTabs.ftl
+new file mode 100644
+index 0000000000..a0b7c26f33
+--- /dev/null
++++ b/browser/locales/en-US/browser/opzPrivateTabs.ftl
+@@ -0,0 +1,13 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++opz-private-tab-new =
++    .label = New private tab
++    .accesskey = P
++opz-private-tab-new-in-session =
++    .label = New private tab in this session
++    .accesskey = s
++opz-private-tab-open-link =
++    .label = Open Link in New Private Tab
++    .accesskey = w
+diff --git a/browser/modules/OpzPrivateTabs.sys.mjs b/browser/modules/OpzPrivateTabs.sys.mjs
+new file mode 100644
+index 0000000000..b110db53a9
+--- /dev/null
++++ b/browser/modules/OpzPrivateTabs.sys.mjs
+@@ -0,0 +1,523 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Opz private tabs: tabs that sit next to normal tabs in an ordinary window
++ * but keep nothing. Each one lives in a hidden, one-off container (a
++ * userContextId from a range that ContextualIdentityService never hands out
++ * and that has no identity), so its cookies and storage are its own. Tabs
++ * opened from it inherit its container; "New private tab in this session"
++ * opens another tab in the same one. When the last tab of a hidden container
++ * is gone its data is wiped. Private tabs record no history, are not kept by
++ * session restore or "recently closed", are not synced, and leave no search,
++ * form or download history.
++ *
++ * Ids that may hold data are listed in a small file in the profile, so that
++ * what a crash leaves behind is wiped at the next start, and an id is not used
++ * again before it has been wiped.
++ */
++
++import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
++
++// Far above anything ContextualIdentityService allocates (it counts up from
++// the default containers) and below its reserved UINT32_MAX.
++const FIRST_ID = 0x70000000;
++const LAST_ID = 0x7ffffffe;
++const PALETTE_SIZE = 6;
++// How long a closed container waits before its data goes, so the pages of its
++// last tab are gone first.
++const WIPE_DELAY_MS = 2000;
++const STATE_FILE = "opz-private-tabs.json";
++
++let gState = null; // { lastId, pending: Set }
++let gInitPromise = null;
++let gWriteQueue = Promise.resolve();
++let gCheckTimer = null;
++const gWiping = new Set();
++const gAllocating = new Set();
++
++function statePath() {
++  return PathUtils.join(PathUtils.profileDir, STATE_FILE);
++}
++
++function saveState() {
++  let data = { lastId: gState.lastId, pending: [...gState.pending] };
++  gWriteQueue = gWriteQueue
++    .then(() =>
++      IOUtils.writeJSON(statePath(), data, { tmpPath: statePath() + ".tmp" })
++    )
++    .catch(console.error);
++  return gWriteQueue;
++}
++
++function wipe(userContextId) {
++  if (gWiping.has(userContextId)) {
++    return;
++  }
++  gWiping.add(userContextId);
++  Services.clearData.deleteDataFromOriginAttributesPattern(
++    { userContextId },
++    {
++      onDataDeleted() {
++        gWiping.delete(userContextId);
++        // A tab may have come back to it while it was being wiped.
++        if (!OpzPrivateTabs.idsInUse().has(userContextId)) {
++          gState.pending.delete(userContextId);
++          saveState();
++        }
++      },
++    }
++  );
++}
++
++export const OpzPrivateTabs = {
++  FIRST_ID,
++  LAST_ID,
++
++  /**
++   * The one test for "is this a private tab's container".
++   *
++   * @param {number|string} userContextId
++   */
++  isPrivateUserContextId(userContextId) {
++    let id = Number(userContextId);
++    return id >= FIRST_ID && id <= LAST_ID;
++  },
++
++  isPrivateBrowser(browser) {
++    return this.isPrivateUserContextId(
++      browser?.getAttribute?.("usercontextid") || 0
++    );
++  },
++
++  isPrivateTab(tab) {
++    return this.isPrivateUserContextId(tab?.userContextId || 0);
++  },
++
++  /**
++   * Whether the address bar of this window is opening its pick in a private
++   * tab, or is used in one: then what it picks is not remembered either.
++   *
++   * @param {Window} window
++   * @param {MozBrowser} [browser] the browser the load goes to, if known.
++   */
++  isPrivateUrlbarLoad(window, browser = null) {
++    if (window?.gURLBar?.opzPrivateUserContextId) {
++      return true;
++    }
++    if (browser) {
++      return this.isPrivateBrowser(browser);
++    }
++    let selected = window?.gBrowser?.selectedBrowser;
++    return !window?.gURLBar?.opzOpenInNewTab && this.isPrivateBrowser(selected);
++  },
++
++  /**
++   * Startup: wipe whatever an earlier run left behind.
++   */
++  init() {
++    if (!gInitPromise) {
++      gState = { lastId: FIRST_ID - 1, pending: new Set() };
++      gInitPromise = (async () => {
++        try {
++          let data = await IOUtils.readJSON(statePath());
++          if (this.isPrivateUserContextId(data.lastId)) {
++            gState.lastId = data.lastId;
++          }
++          for (let id of data.pending || []) {
++            if (this.isPrivateUserContextId(id)) {
++              gState.pending.add(id);
++            }
++          }
++        } catch (ex) {
++          if (!DOMException.isInstance(ex) || ex.name != "NotFoundError") {
++            console.error(ex);
++          }
++        }
++        this.scheduleCheck(0);
++      })();
++    }
++    return gInitPromise;
++  },
++
++  /**
++   * A container id for a new private session, one that holds no data.
++   */
++  async allocate() {
++    await this.init();
++    let inUse = this.idsInUse();
++    let id = gState.lastId;
++    do {
++      id = id >= LAST_ID ? FIRST_ID : id + 1;
++    } while (gState.pending.has(id) || gWiping.has(id) || inUse.has(id));
++    gState.lastId = id;
++    // On disk before the id is used, and cleared of anything a crash before
++    // that point could have left in it.
++    gState.pending.add(id);
++    gAllocating.add(id);
++    try {
++      await saveState();
++      await new Promise(resolve =>
++        Services.clearData.deleteDataFromOriginAttributesPattern(
++          { userContextId: id },
++          { onDataDeleted: resolve }
++        )
++      );
++    } finally {
++      gAllocating.delete(id);
++    }
++    return id;
++  },
++
++  /**
++   * Called for every new <browser>, before it is inserted.
++   */
++  onBrowserCreated(browser, userContextId) {
++    if (!this.isPrivateUserContextId(userContextId)) {
++      return;
++    }
++    // Checked by the docshell before a visit or title is stored.
++    browser.setAttribute("disableglobalhistory", "true");
++    this.init();
++    if (!gState.pending.has(userContextId)) {
++      gState.pending.add(userContextId);
++      saveState();
++    }
++  },
++
++  idsInUse() {
++    let ids = new Set(gAllocating);
++    for (let win of Services.wm.getEnumerator("navigator:browser")) {
++      if (win.closed || !win.gBrowser) {
++        continue;
++      }
++      for (let tab of win.gBrowser.tabs) {
++        if (!tab.closing && this.isPrivateTab(tab)) {
++          ids.add(tab.userContextId);
++        }
++      }
++      let cardId = win.gURLBar?.opzPrivateUserContextId;
++      if (cardId) {
++        ids.add(cardId);
++      }
++    }
++    return ids;
++  },
++
++  scheduleCheck(delay = WIPE_DELAY_MS) {
++    if (gCheckTimer) {
++      clearTimeout(gCheckTimer);
++    }
++    gCheckTimer = setTimeout(() => {
++      gCheckTimer = null;
++      this.wipeUnused();
++    }, delay);
++  },
++
++  wipeUnused() {
++    if (!gState) {
++      return;
++    }
++    let inUse = this.idsInUse();
++    for (let id of gState.pending) {
++      if (!inUse.has(id)) {
++        wipe(id);
++      }
++    }
++  },
++
++  // Windows
++
++  initWindow(window) {
++    this.init();
++    let { gBrowser, document } = window;
++    document.l10n?.addResourceIds(["browser/opzPrivateTabs.ftl"]);
++    for (let tab of gBrowser.tabs) {
++      this.markTab(tab);
++    }
++    let moved = new Set();
++    let regroupLater = tab => {
++      if (this.regrouping) {
++        return;
++      }
++      if (!moved.size) {
++        window.setTimeout(() => {
++          let tabs = [...moved];
++          moved.clear();
++          this.regrouping = true;
++          try {
++            for (let t of tabs) {
++              if (!t.closing && t.isConnected) {
++                this.regroup(gBrowser, t);
++              }
++            }
++          } finally {
++            this.regrouping = false;
++          }
++        });
++      }
++      moved.add(tab);
++    };
++    gBrowser.tabContainer.addEventListener("TabOpen", e => {
++      this.markTab(e.target);
++      this.keepSessionTogether(gBrowser, e.target);
++      regroupLater(e.target);
++    });
++    gBrowser.tabContainer.addEventListener("TabMove", e =>
++      regroupLater(e.target)
++    );
++    gBrowser.tabContainer.addEventListener("TabClose", e => {
++      // A tab moved to another window is not gone.
++      if (!e.detail?.adoptedBy && this.isPrivateTab(e.target)) {
++        this.scheduleCheck();
++      }
++    });
++    window.addEventListener("unload", () => this.scheduleCheck(), {
++      once: true,
++    });
++  },
++
++  markTab(tab) {
++    if (!this.isPrivateTab(tab)) {
++      return;
++    }
++    let index = (tab.userContextId - FIRST_ID) % PALETTE_SIZE;
++    tab.setAttribute("opz-private", index);
++  },
++
++  /**
++   * A new tab of a private session goes next to the session's other tabs.
++   */
++  keepSessionTogether(gBrowser, tab) {
++    if (!this.isPrivateTab(tab) || tab.pinned) {
++      return;
++    }
++    let others = gBrowser.tabs.filter(
++      t =>
++        t != tab &&
++        !t.closing &&
++        !t.pinned &&
++        t.userContextId == tab.userContextId
++    );
++    if (!others.length) {
++      return;
++    }
++    let indexes = [...others, tab].map(t => t.index).sort((a, b) => a - b);
++    if (indexes.at(-1) - indexes[0] == indexes.length - 1) {
++      return;
++    }
++    gBrowser.moveTabAfter(tab, others.at(-1));
++  },
++
++  sessionTabs(gBrowser, userContextId) {
++    return gBrowser.tabs.filter(
++      t => !t.pinned && !t.closing && t.userContextId == userContextId
++    );
++  },
++
++  /**
++   * Keeps the tabs of each private session next to each other after `tab`
++   * moved: a tab dropped inside a session is put after it, and the rest of a
++   * moved private tab's session follows it.
++   */
++  regroup(gBrowser, tab) {
++    if (tab.pinned) {
++      return;
++    }
++    let tabs = gBrowser.tabs.filter(t => !t.pinned && !t.closing);
++    let i = tabs.indexOf(tab);
++    let [prev, next] = [tabs[i - 1], tabs[i + 1]];
++    if (
++      prev &&
++      next &&
++      this.isPrivateTab(prev) &&
++      prev.userContextId == next.userContextId &&
++      tab.userContextId != prev.userContextId
++    ) {
++      gBrowser.moveTabAfter(
++        tab,
++        this.sessionTabs(gBrowser, prev.userContextId).at(-1)
++      );
++    }
++    if (!this.isPrivateTab(tab)) {
++      return;
++    }
++    let session = this.sessionTabs(gBrowser, tab.userContextId);
++    let indexes = session.map(t => t.index);
++    if (indexes.at(-1) - indexes[0] == session.length - 1) {
++      return;
++    }
++    let at = session.indexOf(tab);
++    let anchor = tab;
++    for (let t of session.slice(at + 1)) {
++      gBrowser.moveTabAfter(t, anchor);
++      anchor = t;
++    }
++    anchor = tab;
++    for (let t of session.slice(0, at).reverse()) {
++      gBrowser.moveTabBefore(t, anchor);
++      anchor = t;
++    }
++  },
++
++  /**
++   * Opz's New Tab in a hidden container: the address bar card opens over the
++   * current tab and what is picked opens in a new private tab.
++   *
++   * @param {Window} window
++   * @param {number} [userContextId] an existing private container to share.
++   */
++  async openNewPrivateTab(window, userContextId = null) {
++    let id = this.isPrivateUserContextId(userContextId)
++      ? Number(userContextId)
++      : await this.allocate();
++    let { gURLBar } = window;
++    let release = () => {
++      gURLBar.opzPrivateUserContextId = null;
++      // An id nothing ended up using is dropped again.
++      this.scheduleCheck();
++    };
++    gURLBar.opzPrivateUserContextId = id;
++    gURLBar.inputField.addEventListener(
++      "blur",
++      () => window.setTimeout(release, 0),
++      { once: true }
++    );
++    window.BrowserCommands.openTab();
++    // Without the card openTab has opened a plain tab, not a private one.
++    if (!gURLBar.opzOpenInNewTab) {
++      release();
++    }
++  },
++
++  /**
++   * openLinkIn params for a load: a pick from the card of "New private tab"
++   * goes to its hidden container.
++   */
++  adjustLinkParams(window, where, params) {
++    let id = window?.gURLBar?.opzPrivateUserContextId;
++    // A "current" load with another container opens a new tab instead.
++    if (!id || where == "save") {
++      return params;
++    }
++    return { ...params, userContextId: id };
++  },
++
++  // Menus
++
++  /**
++   * The New Tab button's popup: "New private tab" right under "New Tab".
++   */
++  addNewTabMenuItem(window, popup) {
++    let { document } = window;
++    let item = document.createXULElement("menuitem");
++    item.className = "opz-new-private-tab";
++    document.l10n.setAttributes(item, "opz-private-tab-new");
++    item.addEventListener("command", event => {
++      // Not the button's own command.
++      event.stopPropagation();
++      this.openNewPrivateTab(window);
++    });
++    let newTabItem = popup.querySelector(':scope > [data-usercontextid="0"]');
++    if (newTabItem) {
++      newTabItem.after(item);
++    } else {
++      popup.prepend(item);
++    }
++  },
++
++  /**
++   * The tab context menu: "New private tab", and "New private tab in this
++   * session" for a private tab.
++   */
++  updateTabContextMenu(window, contextTab) {
++    let { document } = window;
++    if (!document.getElementById("opz_context_newPrivateTab")) {
++      let newItem = document.createXULElement("menuitem");
++      newItem.id = "opz_context_newPrivateTab";
++      document.l10n.setAttributes(newItem, "opz-private-tab-new");
++      newItem.addEventListener("command", () => this.openNewPrivateTab(window));
++      document.getElementById("context_openANewTab").after(newItem);
++    }
++    let item = document.getElementById("opz_context_newPrivateTabInSession");
++    if (!item) {
++      item = document.createXULElement("menuitem");
++      item.id = "opz_context_newPrivateTabInSession";
++      document.l10n.setAttributes(item, "opz-private-tab-new-in-session");
++      item.addEventListener("command", () => {
++        let tab = window.TabContextMenu.contextTab;
++        if (this.isPrivateTab(tab)) {
++          this.openNewPrivateTab(window, tab.userContextId);
++        }
++      });
++      document.getElementById("opz_context_newPrivateTab").after(item);
++    }
++    item.hidden = !this.isPrivateTab(contextTab);
++  },
++
++  // Session store
++
++  /**
++   * Drops private tabs from a session state about to be written or kept as
++   * the last session. Windows and tab lists are copied, not changed in place,
++   * since they are the live session store data.
++   */
++  filterSessionState(state) {
++    let isPrivateState = tabState =>
++      this.isPrivateUserContextId(tabState?.userContextId || 0);
++    let filterWindow = win => {
++      let copy = { ...win };
++      if (Array.isArray(win.tabs) && win.tabs.some(isPrivateState)) {
++        let selectedIndex = (win.selected || 1) - 1;
++        copy.tabs = win.tabs.filter(tab => !isPrivateState(tab));
++        let before = win.tabs
++          .slice(0, selectedIndex)
++          .filter(tab => !isPrivateState(tab)).length;
++        let selected = isPrivateState(win.tabs[selectedIndex])
++          ? before
++          : before + 1;
++        copy.selected = Math.max(1, Math.min(selected, copy.tabs.length));
++      }
++      if (Array.isArray(win._closedTabs)) {
++        copy._closedTabs = win._closedTabs.filter(
++          t => !isPrivateState(t.state)
++        );
++      }
++      return copy;
++    };
++    if (Array.isArray(state.windows)) {
++      state.windows = state.windows.map(filterWindow);
++    }
++    if (Array.isArray(state._closedWindows)) {
++      state._closedWindows = state._closedWindows
++        .map(filterWindow)
++        .filter(win => win.tabs?.length);
++    }
++    if (Array.isArray(state.cookies)) {
++      state.cookies = state.cookies.filter(
++        c =>
++          !this.isPrivateUserContextId(c.originAttributes?.userContextId || 0)
++      );
++    }
++    return state;
++  },
++
++  /**
++   * A closed window is kept for "reopen closed window" without its private
++   * tabs.
++   */
++  stripClosedWindow(winData) {
++    if (
++      !winData.tabs?.some(t =>
++        this.isPrivateUserContextId(t.userContextId || 0)
++      )
++    ) {
++      return;
++    }
++    let { tabs, selected } = this.filterSessionState({ windows: [winData] })
++      .windows[0];
++    winData.tabs = tabs;
++    winData.selected = selected;
++  },
++};
+diff --git a/browser/modules/URILoadingHelper.sys.mjs b/browser/modules/URILoadingHelper.sys.mjs
+index 6f88bf621d..ad5f6ebad4 100644
+--- a/browser/modules/URILoadingHelper.sys.mjs
++++ b/browser/modules/URILoadingHelper.sys.mjs
+@@ -9,6 +9,7 @@ import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtil
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+   handleBounceEventTrigger:
+@@ -491,6 +492,9 @@ export const URILoadingHelper = {
+       return;
+     }
+ 
++    // Opz: a pick from the address bar of "New private tab".
++    params = lazy.OpzPrivateTabs.adjustLinkParams(window, where, params);
++
+     let {
+       allowThirdPartyFixup,
+       postData,
+diff --git a/browser/modules/moz.build b/browser/modules/moz.build
+index 66306f218d..bb2ea0bf02 100644
+--- a/browser/modules/moz.build
++++ b/browser/modules/moz.build
+@@ -133,6 +133,7 @@ EXTRA_JS_MODULES += [
+     "LaterRun.sys.mjs",
+     "LinksCache.sys.mjs",
+     "MenuSectionLayout.sys.mjs",
++    "OpzPrivateTabs.sys.mjs",
+     "PageActions.sys.mjs",
+     "PermissionPromptTargeting.sys.mjs",
+     "PermissionUI.sys.mjs",
+diff --git a/browser/themes/shared/tabbrowser/tabs.css b/browser/themes/shared/tabbrowser/tabs.css
+index 4508084ee9..3c8851bbe2 100644
+--- a/browser/themes/shared/tabbrowser/tabs.css
++++ b/browser/themes/shared/tabbrowser/tabs.css
+@@ -3547,3 +3547,62 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+   white-space: nowrap;
+   width: 100%;
+ }
++
++/* Opz: private tabs. Tabs that share a hidden container share a color. */
++.tabbrowser-tab[opz-private] {
++  --identity-icon-color: var(--opz-private-color);
++  --identity-stroke-color: var(--opz-private-color);
++  --identity-tab-color: var(--opz-private-color);
++
++  &[opz-private="0"] {
++    --opz-private-color: #8b5cf6;
++  }
++  &[opz-private="1"] {
++    --opz-private-color: #ec4899;
++  }
++  &[opz-private="2"] {
++    --opz-private-color: #14b8a6;
++  }
++  &[opz-private="3"] {
++    --opz-private-color: #f59e0b;
++  }
++  &[opz-private="4"] {
++    --opz-private-color: #3b82f6;
++  }
++  &[opz-private="5"] {
++    --opz-private-color: #ef4444;
++  }
++
++  > .tab-stack > .tab-background {
++    --opz-private-tint: inset 0 0 0 100vw light-dark(rgb(0 0 0 / 0.17), color-mix(in srgb, var(--opz-private-color) 20%, transparent));
++    box-shadow: var(--opz-private-tint);
++
++    > .tab-context-line {
++      display: none;
++    }
++
++    &[selected] {
++      --opz-private-tint: inset 0 0 0 100vw light-dark(rgb(0 0 0 / 0.07), color-mix(in srgb, var(--opz-private-color) 32%, transparent));
++      box-shadow: var(--opz-private-tint), var(--tab-box-shadow-selected);
++
++      @media -moz-pref("browser.nova.enabled") {
++        box-shadow: var(--opz-private-tint);
++      }
++    }
++  }
++
++  .tab-icon-stack::after {
++    content: "";
++    position: absolute;
++    inset-block-end: -4px;
++    inset-inline-end: -4px;
++    width: 11px;
++    height: 11px;
++    border-radius: 50%;
++    background: url("chrome://browser/skin/privateBrowsing.svg") center / 8px no-repeat var(--opz-private-color);
++    -moz-context-properties: fill;
++    fill: #fff;
++    z-index: 1;
++    pointer-events: none;
++  }
++}
+diff --git a/services/sync/modules/engines/tabs.sys.mjs b/services/sync/modules/engines/tabs.sys.mjs
+index df76b97d4d..86937fada9 100644
+--- a/services/sync/modules/engines/tabs.sys.mjs
++++ b/services/sync/modules/engines/tabs.sys.mjs
+@@ -26,6 +26,7 @@ import { BridgedEngine } from "resource://services-sync/bridged_engine.sys.mjs";
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
+@@ -383,7 +384,8 @@ export const TabProvider = {
+       // but in practice this hasn't been used - only the current URI is of
+       // interest to clients.
+       // We stopped recording this in bug 1783991.
+-      if (!tab?.linkedBrowser) {
++      // Opz: private tabs are not synced.
++      if (!tab?.linkedBrowser || lazy.OpzPrivateTabs.isPrivateTab(tab)) {
+         continue;
+       }
+       let acceptable = !filter
+@@ -610,8 +612,10 @@ TabTracker.prototype = {
+     if (event.originalTarget.linkedBrowser) {
+       let browser = event.originalTarget.linkedBrowser;
+       if (
+-        lazy.PrivateBrowsingUtils.isBrowserPrivate(browser) &&
+-        !lazy.PrivateBrowsingUtils.permanentPrivateBrowsing
++        (lazy.PrivateBrowsingUtils.isBrowserPrivate(browser) &&
++          !lazy.PrivateBrowsingUtils.permanentPrivateBrowsing) ||
++        // Opz: nor private tabs.
++        lazy.OpzPrivateTabs.isPrivateBrowser(browser)
+       ) {
+         this._log.trace("Ignoring tab event from private browsing.");
+         return;
+diff --git a/toolkit/components/downloads/DownloadHistory.sys.mjs b/toolkit/components/downloads/DownloadHistory.sys.mjs
+index 30c9959a56..ad0ab458b9 100644
+--- a/toolkit/components/downloads/DownloadHistory.sys.mjs
++++ b/toolkit/components/downloads/DownloadHistory.sys.mjs
+@@ -17,6 +17,7 @@ import { DownloadError } from "resource://gre/modules/DownloadCore.sys.mjs";
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   Downloads: "resource://gre/modules/Downloads.sys.mjs",
+   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+@@ -87,7 +88,11 @@ export let DownloadHistory = {
+   _listPromises: {},
+ 
+   async addDownloadToHistory(download) {
+-    if (download.source.isPrivate) {
++    // Opz: nor downloads from private tabs.
++    if (
++      download.source.isPrivate ||
++      lazy.OpzPrivateTabs.isPrivateUserContextId(download.source.userContextId)
++    ) {
+       return;
+     }
+     const sourceUrl = getHistorySourceUrl(download);
+@@ -113,7 +118,14 @@ export let DownloadHistory = {
+    *        represents a private download, the call has no effect.
+    */
+   async updateMetaData(download) {
+-    if (download.source.isPrivate || !download.stopped) {
++    if (
++      download.source.isPrivate ||
++      // Opz: nor downloads from private tabs.
++      lazy.OpzPrivateTabs.isPrivateUserContextId(
++        download.source.userContextId
++      ) ||
++      !download.stopped
++    ) {
+       return;
+     }
+     const sourceUrl = getHistorySourceUrl(download);
+diff --git a/toolkit/components/downloads/DownloadIntegration.sys.mjs b/toolkit/components/downloads/DownloadIntegration.sys.mjs
+index bf4595f0dd..4f3d000bd4 100644
+--- a/toolkit/components/downloads/DownloadIntegration.sys.mjs
++++ b/toolkit/components/downloads/DownloadIntegration.sys.mjs
+@@ -16,6 +16,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+   ContentAnalysisUtils: "resource://gre/modules/ContentAnalysisUtils.sys.mjs",
+   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+@@ -245,6 +246,12 @@ export var DownloadIntegration = {
+    * @return True to save the download, false otherwise.
+    */
+   shouldPersistDownload(aDownload) {
++    // Opz: downloads from private tabs are not kept.
++    if (
++      lazy.OpzPrivateTabs.isPrivateUserContextId(aDownload.source.userContextId)
++    ) {
++      return false;
++    }
+     // On all platforms, we save all the downloads currently in progress, as
+     // well as stopped downloads for which we retained partially downloaded
+     // data or we have blocked data.
+diff --git a/toolkit/components/satchel/FormHistoryParent.sys.mjs b/toolkit/components/satchel/FormHistoryParent.sys.mjs
+index b3d67d689b..4f2ff49b0a 100644
+--- a/toolkit/components/satchel/FormHistoryParent.sys.mjs
++++ b/toolkit/components/satchel/FormHistoryParent.sys.mjs
+@@ -8,6 +8,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ const lazy = {};
+ 
+ ChromeUtils.defineESModuleGetters(lazy, {
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
+   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+@@ -65,6 +66,14 @@ export class FormHistoryParent extends JSWindowActorParent {
+     if (this.browsingContext?.usePrivateBrowsing ?? true) {
+       return;
+     }
++    // Opz: nor in private tabs.
++    if (
++      lazy.OpzPrivateTabs.isPrivateUserContextId(
++        this.browsingContext.originAttributes.userContextId
++      )
++    ) {
++      return;
++    }
+ 
+     const changes = entries
+       .filter(entry => lazy.FormHistory.isAllowedEntry(entry.name, entry.value))
+diff --git a/toolkit/components/thumbnails/PageThumbs.sys.mjs b/toolkit/components/thumbnails/PageThumbs.sys.mjs
+index eb95016608..cbb3d534e6 100644
+--- a/toolkit/components/thumbnails/PageThumbs.sys.mjs
++++ b/toolkit/components/thumbnails/PageThumbs.sys.mjs
+@@ -259,6 +259,10 @@ export var PageThumbs = {
+     if (lazy.PrivateBrowsingUtils.isBrowserPrivate(aBrowser)) {
+       return false;
+     }
++    // Opz: nor for browsers that keep no history, such as private tabs.
++    if (aBrowser.hasAttribute("disableglobalhistory")) {
++      return false;
++    }
+     if (aBrowser.isRemoteBrowser) {
+       if (aBrowser.browsingContext.currentWindowGlobal) {
+         let thumbnailsActor =

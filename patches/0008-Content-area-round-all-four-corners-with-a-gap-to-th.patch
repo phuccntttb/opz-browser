@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sun, 8 Nov 2026 22:07:36 +0700
+Subject: [PATCH] Content area: round all four corners, with a gap to the
+ window edges
+
+---
+ .../themes/shared/tabbrowser/content-area.css | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
+index 2ffa3cac3c..837f602186 100644
+--- a/browser/themes/shared/tabbrowser/content-area.css
++++ b/browser/themes/shared/tabbrowser/content-area.css
+@@ -614,6 +614,34 @@
+   }
+ }
+ 
++/* Opz: an unsplit tab is drawn as a card, like a split-view panel: all four
++ * corners rounded, a border all round, and a gap to the window edges. Firefox
++ * only rounds the corners that face the toolbar or sidebar. The gap makes the
++ * bottom corners concentric with the window's own rounded corners. */
++@media -moz-pref("browser.nova.enabled") {
++  :root:not([inDOMFullscreen], [fullscreenNavToolboxHidden], [macOSNativeFullscreen]) #tabbrowser-tabpanels > :not(.split-view-panel) .browserContainer {
++    margin: 0 var(--opz-content-gap) var(--opz-content-gap);
++    border: var(--border-width) solid var(--chrome-content-separator-color) !important;
++    border-radius: var(--border-radius-medium) !important;
++    --opz-content-gap: max(var(--space-xsmall), calc(var(--window-border-radius) - var(--border-radius-medium)));
++
++    /* No gap on the side that faces the tab column: there it would read as
++       part of the column and pull the tab icons off its middle. */
++    #tabbrowser-tabbox[sidebar-shown]:not([sidebar-positionend]) & {
++      margin-inline-start: 0;
++    }
++    #tabbrowser-tabbox[sidebar-shown][sidebar-positionend] & {
++      margin-inline-end: 0;
++    }
++
++    @media (-moz-platform: macos) {
++      --content-scrollbar-inset-block: var(--border-radius-medium) !important;
++      --content-scrollbar-inset-inline-start: var(--border-radius-medium) !important;
++      --content-scrollbar-inset-inline-end: var(--border-radius-medium) !important;
++    }
++  }
++}
++
+ /* Split view */
+ 
+ split-view-footer {

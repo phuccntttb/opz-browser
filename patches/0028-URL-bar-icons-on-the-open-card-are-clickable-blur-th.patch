@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 19:44:10 +0700
+Subject: [PATCH] URL bar: icons on the open card are clickable; blur the
+ window behind it
+
+---
+ browser/base/content/browser-init.js | 9 +++++++++
+ browser/themes/shared/urlbar.css     | 9 +++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 599e5d3708..efb04e99f0 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -419,6 +419,15 @@ var gBrowserInit = {
+     window.addEventListener(
+       "mousedown",
+       event => {
++        // The icons on the card's sides keep the focus where it is, or the
++        // card would collapse under the pointer before the click lands.
++        if (
++          gURLBar.focused &&
++          event.target.closest?.("#identity-box, #page-action-buttons")
++        ) {
++          event.preventDefault();
++          return;
++        }
+         if (
+           gURLBar.focused &&
+           !event.target.closest?.("#urlbar") &&
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index b328eaae08..12de631dfd 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1787,6 +1787,15 @@ toolbar[inactive="true"] .urlbar,
+   -moz-window-dragging: no-drag;
+ }
+ 
++/* The window behind the open card is blurred. */
++#browser {
++  transition: filter 180ms ease-out;
++}
++
++:root:not([customizing]):has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
++  filter: blur(10px);
++}
++
+ @keyframes opz-urlbar-in {
+   from {
+     opacity: 0;

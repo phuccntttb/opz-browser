@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 19:06:18 +0700
+Subject: [PATCH] URL bar: fade the card and its results in
+
+---
+ browser/themes/shared/urlbar.css | 32 ++++++++++++++++++++++++++++++--
+ 1 file changed, 30 insertions(+), 2 deletions(-)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 5e4ba2d28d..066bab0721 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1787,7 +1787,35 @@ toolbar[inactive="true"] .urlbar,
+   -moz-window-dragging: no-drag;
+ }
+ 
+-:root:not([customizing]) #urlbar[opz-newtab]:not([open], [popover-open]),
+-:root:not([customizing]) #navigator-toolbox:has(#urlbar[opz-newtab]:not([open], [popover-open])) #opz-urlbar-scrim {
++@keyframes opz-urlbar-in {
++  from {
++    opacity: 0;
++  }
++}
++
++/* The card, its dimming shadow and its results fade in. While a New Tab waits
++ * for its results the card is hidden and has no animation, which starts when
++ * it is shown. */
++:root:not([customizing]) #navigator-toolbox #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode]) {
++  animation: opz-urlbar-in 180ms ease-out;
++
++  @media (prefers-reduced-motion) {
++    animation: none;
++  }
++}
++
++:root:not([customizing]) #navigator-toolbox #urlbar[opz-newtab]:not([open], [popover-open]) {
++  animation: none;
+   opacity: 0;
+ }
++
++
++/* The results are a popover in the top layer, which the bar's own opacity does
++ * not reach. */
++:root:not([customizing]) #urlbar[popover-open] > .urlbarView {
++  animation: opz-urlbar-in 180ms ease-out;
++
++  @media (prefers-reduced-motion) {
++    animation: none;
++  }
++}

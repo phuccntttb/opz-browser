@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sun, 8 Nov 2026 22:48:24 +0700
+Subject: [PATCH] Toolbar: drop the sidebar and new tab buttons
+
+---
+ .../customizableui/CustomizableUI.sys.mjs     | 40 ++++++++++++++++++-
+ 1 file changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
+index 6875e44139..0327af4b82 100644
+--- a/browser/components/customizableui/CustomizableUI.sys.mjs
++++ b/browser/components/customizableui/CustomizableUI.sys.mjs
+@@ -73,6 +73,13 @@ var kVersion = 28;
+ // Opz: set once the "List all tabs" button was taken out of a profile.
+ const kPrefOpzAllTabsButtonRemoved =
+   "opz.customizableui.allTabsButtonRemovedV2";
++// Opz: set once the sidebar and new tab buttons were taken off a profile's
++// nav-bar. V2: the first pass could be undone in the same startup, because
++// the sidebar button was queued to be "introduced" (sidebar.revamp) and got
++// appended to the end of the nav-bar again.
++const kPrefOpzNavBarButtonsRemoved =
++  "opz.customizableui.navBarButtonsRemovedV2";
++const kOpzRemovedNavBarButtons = ["sidebar-button", "new-tab-button"];
+ 
+ /**
+  * Buttons removed from built-ins by version they were removed. kVersion must be
+@@ -362,7 +369,8 @@ var CustomizableUIInternal = {
+     );
+ 
+     let navbarPlacements = [
+-      lazy.sidebarRevampEnabled ? "sidebar-button" : null,
++      // Opz: no sidebar button; the tab column expands on hover and the
++      // panels open from View > Sidebar or their keyboard shortcuts.
+       "back-button",
+       "forward-button",
+       "stop-reload-button",
+@@ -534,11 +542,19 @@ var CustomizableUIInternal = {
+    */
+   // eslint-disable-next-line complexity
+   updateForNewVersion() {
++    // Opz: never introduce the sidebar button (it is introduced by the
++    // sidebar.revamp pref, which is on). New profiles would otherwise get it
++    // appended to the nav-bar on their second startup.
++    Services.prefs.setBoolPref(
++      "browser.toolbarbuttons.introduced.sidebar-button",
++      true
++    );
+     // We should still enter even if gSavedState.currentVersion >= kVersion
+     // because the per-widget pref facility is independent of versioning.
+     if (!gSavedState) {
+       // Opz: new profiles never had the "List all tabs" button.
+       Services.prefs.setBoolPref(kPrefOpzAllTabsButtonRemoved, true);
++      Services.prefs.setBoolPref(kPrefOpzNavBarButtonsRemoved, true);
+       // Flip all the prefs so we don't try to re-introduce later:
+       for (let [, widget] of gPalette) {
+         if (widget.defaultArea && widget._introducedInVersion === "pref") {
+@@ -1081,6 +1097,28 @@ var CustomizableUIInternal = {
+       }
+       Services.prefs.setBoolPref(kPrefOpzAllTabsButtonRemoved, true);
+     }
++
++    // Opz: take the sidebar and new tab buttons off older profiles' nav-bar,
++    // once. Users can add them back from Customize Toolbar.
++    if (!Services.prefs.getBoolPref(kPrefOpzNavBarButtonsRemoved, false)) {
++      let navbar = gSavedState.placements?.[CustomizableUI.AREA_NAVBAR];
++      if (Array.isArray(navbar)) {
++        gSavedState.placements[CustomizableUI.AREA_NAVBAR] = navbar.filter(
++          id => !kOpzRemovedNavBarButtons.includes(id)
++        );
++      }
++      let verticalSnapshot =
++        CustomizableUIInternal.getSavedVerticalSnapshotState();
++      if (verticalSnapshot.some(id => kOpzRemovedNavBarButtons.includes(id))) {
++        CustomizableUIInternal.saveNavBarWhenVerticalTabsState(
++          verticalSnapshot.filter(id => !kOpzRemovedNavBarButtons.includes(id))
++        );
++      }
++      for (let id of kOpzRemovedNavBarButtons) {
++        gFuturePlacements.get(CustomizableUI.AREA_NAVBAR)?.delete(id);
++      }
++      Services.prefs.setBoolPref(kPrefOpzNavBarButtonsRemoved, true);
++    }
+   },
+ 
+   /**

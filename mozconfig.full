@@ -1,0 +1,53 @@
+# Opz Browser mozconfig — full build (OPZ_BUILD=full, see env.sh).
+# Compiles everything, C++ and Rust included, so it is much slower than the
+# artifact build (mozconfig). What it adds: Opz's own updater, which only
+# installs update packages (.mar) signed with Opz's key (updates/certs/,
+# patch "Updater: trust Opz's MAR signing certificates"). Releases are made
+# from this build (scripts/release.sh).
+ac_add_options --enable-project=browser
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-full
+ac_add_options --enable-optimize
+ac_add_options --disable-debug
+ac_add_options --disable-tests
+# Compiler cache ($SCCACHE_DIR on the build drive, see env.sh): rebuilds after
+# a small change or a Firefox update only recompile what changed.
+# OPZ_NO_SCCACHE=1 (set by the GitHub Actions release): every runner starts
+# empty, so the cache gains nothing there, and its server died mid-build on
+# the Windows runner ("sccache: encountered fatal error").
+if [ -z "${OPZ_NO_SCCACHE:-}" ]; then
+    ac_add_options --with-ccache=sccache
+fi
+
+# --- Branding (same as mozconfig) ------------------------------------------
+ac_add_options --with-branding=browser/branding/opz
+ac_add_options --with-app-basename=Opz
+ac_add_options MOZ_APP_REMOTINGNAME=opz
+ac_add_options MOZ_PKG_APPNAME=opz
+# The binary keeps the name "firefox", like the artifact build, so both
+# builds have the same file layout and share the packaging scripts.
+ac_add_options --with-app-name=firefox
+# The web-facing User-Agent stays identical to Firefox ("... Firefox/159.0"):
+# MOZ_APP_UA_NAME=Firefox in branding/opz/configure.sh is compiled in here
+# (netwerk/protocol/http/nsHttpHandler.cpp); the artifact build gets the same
+# from UAName in application.ini (scripts/build.sh).
+
+# --- Updates -----------------------------------------------------------------
+# The updater is on (the artifact mozconfig turns it off). It accepts only
+# MARs whose channel ID is in ACCEPTED_MAR_CHANNEL_IDS and whose signature
+# matches updates/certs/. The update URL comes from prefs/policies.json
+# (AppUpdateURL), written by scripts/release.sh from updates/update.env.
+# The update channel stays "default" like the artifact build (a "release"
+# channel would also switch on release-only behaviour in Firefox).
+ac_add_options --enable-updater
+ac_add_options MAR_CHANNEL_ID=opz-release
+ac_add_options ACCEPTED_MAR_CHANNEL_IDS=opz-release
+# Windows: no Mozilla Maintenance Service. It only runs an updater signed by
+# Mozilla, so it is useless to Opz. Opz is shipped as a zip meant for a folder
+# the user can write to (%LOCALAPPDATA%\Opz), where the updater needs no admin
+# rights. (The option only exists on Windows, so it is set only there.)
+if [ "${OPZ_OS:-}" = win ]; then
+    ac_add_options --disable-maintenance-service
+fi
+
+# No Mozilla crash reports (they would be sent as Firefox to Mozilla).
+ac_add_options --disable-crashreporter

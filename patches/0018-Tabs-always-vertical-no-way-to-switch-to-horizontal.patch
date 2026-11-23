@@ -1,0 +1,123 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 15:18:10 +0700
+Subject: [PATCH] Tabs: always vertical, no way to switch to horizontal
+
+---
+ browser/components/BrowserGlue.sys.mjs                      | 3 ++-
+ browser/components/customizableui/CustomizableUI.sys.mjs    | 2 +-
+ .../components/customizableui/ToolbarContextMenu.sys.mjs    | 4 ++--
+ browser/components/preferences/config/tabs-browsing.mjs     | 3 ++-
+ browser/components/sidebar/browser-sidebar.js               | 6 ++----
+ browser/components/sidebar/sidebar-customize.mjs            | 4 +++-
+ browser/components/sidebar/sidebar-main.mjs                 | 2 +-
+ 7 files changed, 13 insertions(+), 11 deletions(-)
+
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+index f0c9dbb7bb..aada98db51 100644
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -718,7 +718,8 @@ BrowserGlue.prototype = {
+     // first window is up, goes through the same layout switch as the user's
+     // "Turn on vertical tabs"; starting a new profile straight in vertical
+     // mode builds a broken nav-bar.
+-    if (!Services.prefs.getBoolPref("opz.verticalTabsDefaultApplied", false)) {
++    // Every start, so a profile can never stay horizontal.
++    if (!Services.prefs.getBoolPref("sidebar.verticalTabs", false)) {
+       Services.prefs.setBoolPref("opz.verticalTabsDefaultApplied", true);
+       Services.prefs.setBoolPref("sidebar.verticalTabs", true);
+     }
+diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
+index 0327af4b82..221cb730a0 100644
+--- a/browser/components/customizableui/CustomizableUI.sys.mjs
++++ b/browser/components/customizableui/CustomizableUI.sys.mjs
+@@ -4747,7 +4747,7 @@ var CustomizableUIInternal = {
+     // CUI reset also implies resetting verticalTabs back to false.
+     // We do this before the rest of the reset so widgets are reset to their non-vertical
+     // positions.
+-    Services.prefs.setBoolPref("sidebar.verticalTabs", false);
++    // Opz: tabs stay vertical, so the pref is left alone.
+     this._resetUIState();
+ 
+     // Rebuild each registered area (across windows) to reflect the state that
+diff --git a/browser/components/customizableui/ToolbarContextMenu.sys.mjs b/browser/components/customizableui/ToolbarContextMenu.sys.mjs
+index c96e1b61a8..2b47f214ca 100644
+--- a/browser/components/customizableui/ToolbarContextMenu.sys.mjs
++++ b/browser/components/customizableui/ToolbarContextMenu.sys.mjs
+@@ -252,8 +252,8 @@ export var ToolbarContextMenu = {
+     let toggleVerticalTabsItem = document.getElementById(
+       "toolbar-context-toggle-vertical-tabs"
+     );
+-    // Opz: vertical tabs need the new sidebar; hide the switch without it.
+-    toggleVerticalTabsItem.hidden = !showSidebarActions || !sidebarRevampEnabled;
++    // Opz: tabs are always vertical, so there is no switch.
++    toggleVerticalTabsItem.hidden = true;
+     document.l10n.setAttributes(
+       toggleVerticalTabsItem,
+       gBrowser.tabContainer?.verticalMode
+diff --git a/browser/components/preferences/config/tabs-browsing.mjs b/browser/components/preferences/config/tabs-browsing.mjs
+index eb84343b91..2e02888dc9 100644
+--- a/browser/components/preferences/config/tabs-browsing.mjs
++++ b/browser/components/preferences/config/tabs-browsing.mjs
+@@ -618,7 +618,8 @@ Preferences.addSetting({
+   id: "browserLayoutRadioGroup",
+   pref: "sidebar.verticalTabs",
+   // Opz: vertical tabs need the new sidebar (sidebar.revamp), off by default.
+-  visible: () => Services.prefs.getBoolPref("sidebar.revamp", false),
++  // Opz: tabs are always vertical, so the layout choice is not offered.
++  visible: () => false,
+   get: prefValue => (prefValue ? "true" : "false"),
+   set: value => value === "true",
+ });
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index 7139302916..4a9ba07cd4 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -805,10 +805,8 @@ var SidebarController = {
+    * Toggle the vertical tabs preference.
+    */
+   toggleVerticalTabs() {
+-    Services.prefs.setBoolPref(
+-      "sidebar.verticalTabs",
+-      !this.sidebarVerticalTabsEnabled
+-    );
++    // Opz: tabs are always vertical; there is no way back to horizontal.
++    Services.prefs.setBoolPref("sidebar.verticalTabs", true);
+   },
+ 
+   /**
+diff --git a/browser/components/sidebar/sidebar-customize.mjs b/browser/components/sidebar/sidebar-customize.mjs
+index ceec685426..312a3c0c47 100644
+--- a/browser/components/sidebar/sidebar-customize.mjs
++++ b/browser/components/sidebar/sidebar-customize.mjs
+@@ -252,6 +252,7 @@ export class SidebarCustomize extends SidebarPage {
+             <moz-checkbox
+               type="checkbox"
+               id="vertical-tabs"
++              style="display: none"
+               name="verticalTabs"
+               data-l10n-id="sidebar-vertical-tabs"
+               @change=${this.#handleTabDirectionChange}
+@@ -406,7 +407,8 @@ export class SidebarCustomize extends SidebarPage {
+   }
+ 
+   #handleTabDirectionChange({ target: { checked } }) {
+-    const verticalTabsEnabled = checked;
++    // Opz: tabs are always vertical.
++    const verticalTabsEnabled = true;
+     Services.prefs.setBoolPref(TAB_DIRECTION_SETTING_PREF, verticalTabsEnabled);
+     Glean.sidebarCustomize.tabsLayout.record({
+       orientation: verticalTabsEnabled ? "vertical" : "horizontal",
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index 7e96b7a394..d1576f3d92 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -441,7 +441,7 @@ export default class SidebarMain extends MozLitElement {
+     this._reportExtensionMenuItem.hidden = true;
+     this._unpinExtensionMenuItem.hidden = true;
+     this._customizeSidebarMenuItem.hidden = false;
+-    this._enableVerticalTabsMenuItem.hidden = false;
++    this._enableVerticalTabsMenuItem.hidden = true;
+     this._hideSidebarMenuItem.hidden = false;
+     this.hideToolMenuItems();
+   }

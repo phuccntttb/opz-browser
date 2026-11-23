@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 18:44:59 +0700
+Subject: [PATCH] URL bar: a click anywhere outside it closes it
+
+---
+ browser/base/content/browser-init.js | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 704f579a92..7be32578e9 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -408,6 +408,22 @@ var gBrowserInit = {
+     });
+     gBrowser.addTabsProgressListener(FullPageTranslationsPanel);
+ 
++    // Opz: a click anywhere outside the address bar closes it, also on parts
++    // of the window that do not take focus (the tab column, empty toolbar).
++    window.addEventListener(
++      "mousedown",
++      event => {
++        if (
++          gURLBar.focused &&
++          !event.target.closest?.("#urlbar") &&
++          !event.target.closest?.("panel, menupopup")
++        ) {
++          gURLBar.inputField.blur();
++        }
++      },
++      true
++    );
++
+     window.addEventListener("AppCommand", HandleAppCommandEvent, true);
+ 
+     if (!gMultiProcessBrowser) {

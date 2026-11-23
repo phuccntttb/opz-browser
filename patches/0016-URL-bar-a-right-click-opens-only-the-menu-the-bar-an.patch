@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Mon, 9 Nov 2026 22:32:06 +0700
+Subject: [PATCH] URL bar: a right click opens only the menu, the bar and its
+ results stay as they are
+
+---
+ .../urlbar/content/UrlbarInputBase.mjs         | 18 ++++++++++++++----
+ browser/themes/shared/urlbar.css               |  7 ++++---
+ 2 files changed, 18 insertions(+), 7 deletions(-)
+
+diff --git a/browser/components/urlbar/content/UrlbarInputBase.mjs b/browser/components/urlbar/content/UrlbarInputBase.mjs
+index 7062255b05..fe763d41b4 100644
+--- a/browser/components/urlbar/content/UrlbarInputBase.mjs
++++ b/browser/components/urlbar/content/UrlbarInputBase.mjs
+@@ -4546,6 +4546,8 @@ ${
+         pasteAndGo.setAttribute("label", label);
+         pasteAndGo.setAttribute("anonid", "paste-and-go");
+         pasteAndGo.addEventListener("command", () => {
++          // Opz: closed here rather than when the menu opens (see onShowing).
++          this.view.close();
+           this._suppressStartQuery = true;
+ 
+           this.select();
+@@ -4561,10 +4563,10 @@ ${
+         return fragment;
+       },
+       onShowing: (input, [pasteAndGo]) => {
+-        // Close the results pane, because paste and go doesn't want a result
+-        // selection. This has to happen before the menu opens: hiding the
+-        // popover once it's open keeps it from showing (bug 2037468).
+-        this.view.close();
++        // Opz: the results stay open under the menu. Closing them here would
++        // leave the floating address bar (see urlbar.css) alone in the middle
++        // of the window while the menu is up. Paste and go, which doesn't
++        // want a result selection, closes them itself.
+ 
+         // The edit context menu is shared with other inputs in chrome, and
+         // only the items we add here conflict, so mark it for this opening
+@@ -5238,6 +5240,7 @@ ${
+     this._handoffSession = undefined;
+     this._isHandoffSession = false;
+     this.removeAttribute("focused");
++    this.removeAttribute("context-focus");
+     // Reset this, so that it doesn't cause issues with different tests
+     // when they focus and select the address bar.
+     this.#preventClickSelectsAll = false;
+@@ -5466,6 +5469,13 @@ ${
+           break;
+         }
+ 
++        // Opz: a right (or middle) click that focuses the bar only opens its
++        // context menu, so the bar stays where it is instead of floating to
++        // the middle of the window (see urlbar.css). A left click floats it.
++        if (event.button == 0 || !this.focused) {
++          this.toggleAttribute("context-focus", event.button != 0);
++        }
++
+         this.focusedViaMousedown = !this.focused;
+         this.#preventClickSelectsAll = this.focused;
+ 
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index b94bebc45b..172202a397 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1651,7 +1651,8 @@ toolbar[inactive="true"] .urlbar,
+  * only as wide as the address it shows plus its buttons, instead of filling
+  * the toolbar, sits in the middle of it and has no background. It grows back to the full width
+  * as soon as it is focused, so typing and the results list keep their room. */
+-#urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode]) {
++/* [context-focus]: focused only by a right click, for the context menu. */
++#urlbar:not([open], [popover-open], [usertyping], [searchmode]):is(:not([focused]), [context-focus]) {
+   flex: 0 1 auto;
+   margin-inline: auto;
+ 
+@@ -1720,7 +1721,7 @@ toolbar[inactive="true"] .urlbar,
+  * card, with its results under it, over a dimmed window. Clicks on the dimmed
+  * area go through to what is under it, which blurs the bar and closes it. */
+ :root:not([customizing]) {
+-  #urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode]) {
++  #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode]) {
+     --urlbar-height: 44px;
+     --urlbar-background-overhang-open: 8px;
+     /* These are worked out on :root from the values there, so they are
+@@ -1756,7 +1757,7 @@ toolbar[inactive="true"] .urlbar,
+     }
+   }
+ 
+-  #navigator-toolbox:has(#urlbar:is([focused], [open], [popover-open], [usertyping], [searchmode])) {
++  #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode])) {
+     z-index: 10;
+ 
+     /* The bar's own shadow dims the window, so it paints under the bar and

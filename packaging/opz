@@ -1,0 +1,12 @@
+#!/bin/sh
+# Opz Browser launcher (installed as <opz dir>/opz). Always start Opz through
+# this script: it points the prebuilt Gecko binary at Opz's application.ini
+# (name Opz, profile ~/.config/mozilla/opz, Firefox-compatible User-Agent).
+# The variable survives in-app restarts (xpcom/base/AppShutdown.cpp).
+here="$(dirname "$(readlink -f "$0")")"
+export XUL_APP_FILE="$here/browser/application.ini"
+# Restart / session management / default-browser checks use this launcher
+# instead of the bare binary (toolkit/xre/nsNativeAppSupportUnix.cpp,
+# browser/components/shell/nsGNOMEShellService.cpp).
+export MOZ_APP_LAUNCHER="$here/opz"
+exec "$here/opz-bin" "$@"

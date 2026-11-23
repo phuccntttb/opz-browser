@@ -1,0 +1,4 @@
+# Firefox source checkout + objdir (fetched by scripts/fetch.sh)
+/engine/
+/dist/
+*.log

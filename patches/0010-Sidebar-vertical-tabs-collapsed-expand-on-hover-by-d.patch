@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sun, 8 Nov 2026 22:32:55 +0700
+Subject: [PATCH] Sidebar: vertical tabs collapsed, expand on hover by default
+
+---
+ .../components/sidebar/SidebarManager.sys.mjs | 23 ++++++++++++++++++-
+ browser/components/sidebar/browser-sidebar.js |  3 ++-
+ 2 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/browser/components/sidebar/SidebarManager.sys.mjs b/browser/components/sidebar/SidebarManager.sys.mjs
+index 2d983ac28a..1eb89bfbd1 100644
+--- a/browser/components/sidebar/SidebarManager.sys.mjs
++++ b/browser/components/sidebar/SidebarManager.sys.mjs
+@@ -20,7 +20,11 @@ const VERTICAL_VISIBILITIES = [
+   "hide-sidebar",
+ ];
+ const HORIZONTAL_VISIBILITIES = ["hide-on-close", "hide-launcher"];
+-const DEFAULT_VERTICAL_VISIBILITY = "always-show";
++// Opz: with vertical tabs the tab column stays collapsed to icons and expands
++// while the pointer is over it.
++const DEFAULT_VERTICAL_VISIBILITY = "expand-on-hover";
++// Opz: marks the one-time move of an existing profile from "always-show".
++const OPZ_EXPAND_ON_HOVER_APPLIED_PREF = "opz.expandOnHoverApplied";
+ // Opz: with horizontal tabs, no launcher column of tool icons. Bookmarks,
+ // history and the other tools open as panels with a switcher in their header;
+ // the sidebar's Customize panel can bring the launcher back.
+@@ -123,6 +127,23 @@ class SidebarManager extends EventTarget {
+       this.checkForPinnedTabs();
+     });
+ 
++    // Opz: a profile that already had vertical tabs always expanded moves to
++    // expand-on-hover once; a later choice in the sidebar's Customize panel
++    // is kept.
++    if (!Services.prefs.getBoolPref(OPZ_EXPAND_ON_HOVER_APPLIED_PREF, false)) {
++      if (
++        lazy.verticalTabsEnabled &&
++        Services.prefs.getStringPref(VISIBILITY_SETTING_PREF, "") ==
++          "always-show"
++      ) {
++        Services.prefs.setStringPref(
++          VISIBILITY_SETTING_PREF,
++          DEFAULT_VERTICAL_VISIBILITY
++        );
++      }
++      Services.prefs.setBoolPref(OPZ_EXPAND_ON_HOVER_APPLIED_PREF, true);
++    }
++
+     // Move the visibility to the orientation's default if the current value
+     // isn't valid for it (e.g. a value carried over from the other orientation).
+     this.handleVerticalTabsPrefChange(lazy.verticalTabsEnabled);
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index 710cd92b0d..7139302916 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -3030,7 +3030,8 @@ XPCOMUtils.defineLazyPreferenceGetter(
+           "hide-sidebar",
+         ];
+         if (newValue && !verticalValues.includes(visibility)) {
+-          visibility = "always-show";
++          // Opz: matches DEFAULT_VERTICAL_VISIBILITY in SidebarManager.
++          visibility = "expand-on-hover";
+         } else if (!newValue && verticalValues.includes(visibility)) {
+           // Opz: matches DEFAULT_HORIZONTAL_VISIBILITY in SidebarManager.
+           visibility = "hide-launcher";

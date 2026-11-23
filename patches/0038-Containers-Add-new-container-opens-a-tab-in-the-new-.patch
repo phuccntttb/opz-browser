@@ -1,0 +1,144 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 17:07:09 +0700
+Subject: [PATCH] Containers: Add new container opens a tab in the new
+ container
+
+---
+ browser/base/content/browser.js               |  6 ++++++
+ browser/base/content/utilityOverlay.js        |  8 +++++++-
+ .../content/ContainerCreationPanel.mjs        | 10 ++++++++--
+ .../content/ContainerEditor.mjs               |  4 +++-
+ .../tabbrowser/content/tab-context-menu.js    | 19 ++++++++++++++-----
+ 5 files changed, 38 insertions(+), 9 deletions(-)
+
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index ba9a601b03..94177d2385 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -1577,6 +1577,12 @@ function CreateContainerTabMenu(event) {
+   createUserContextMenu(event, {
+     showDefaultTab: true,
+     containerSource: "new_tab_button",
++    // Opz: "Add new container" opens a new tab in it, like the other items.
++    opzOnContainerCreated: userContextId =>
++      openTrustedLinkIn(BROWSER_NEW_TAB_URL, "tab", {
++        userContextId,
++        eventDetail: { containerSource: "new_tab_button" },
++      }),
+   });
+   // Opz: "New private tab" right under "New Tab".
+   OpzPrivateTabs.addNewTabMenuItem(window, event.target);
+diff --git a/browser/base/content/utilityOverlay.js b/browser/base/content/utilityOverlay.js
+index 3b8782f6fc..1a8c4b84f4 100644
+--- a/browser/base/content/utilityOverlay.js
++++ b/browser/base/content/utilityOverlay.js
+@@ -189,6 +189,7 @@ function createUserContextMenu(
+     showAddContainer = true,
+     showManageContainers = true,
+     containerSource = "unknown",
++    opzOnContainerCreated = null,
+   } = {}
+ ) {
+   target = target || event.target;
+@@ -296,7 +297,12 @@ function createUserContextMenu(
+   if (showAddContainer) {
+     let menuitem = createMenuItem({ l10nId: "user-context-add-container2" });
+     onActivate(menuitem, () =>
+-      ContainerCreationPanel.open(window, containerSource)
++      // Opz: the menu can open a tab in the container once it is created.
++      ContainerCreationPanel.open(
++        window,
++        containerSource,
++        opzOnContainerCreated
++      )
+     );
+     docfrag.appendChild(menuitem);
+   }
+diff --git a/browser/components/contextualidentity/content/ContainerCreationPanel.mjs b/browser/components/contextualidentity/content/ContainerCreationPanel.mjs
+index 9868c28865..8fb347d248 100644
+--- a/browser/components/contextualidentity/content/ContainerCreationPanel.mjs
++++ b/browser/components/contextualidentity/content/ContainerCreationPanel.mjs
+@@ -38,8 +38,10 @@ export const ContainerCreationPanel = {
+    *   The chrome window the request originated from.
+    * @param {string} [entrypoint]
+    *   The UI entry point the request came from.
++   * @param {Function} [onCreated]
++   *   Called with the new container's userContextId once it is created.
+    */
+-  async open(sourceWin, entrypoint = "unknown") {
++  async open(sourceWin, entrypoint = "unknown", onCreated = null) {
+     let source = sourceWin.top;
+     let win = source.gBrowser
+       ? source
+@@ -73,8 +75,12 @@ export const ContainerCreationPanel = {
+     updateValidity();
+ 
+     let onCreate = () => {
+-      editor.commit();
++      let identity = editor.commit();
+       panel.hidePopup();
++      // Opz: a tab in the new container right away.
++      if (identity && onCreated) {
++        onCreated(identity.userContextId);
++      }
+     };
+     let onCancel = () => panel.hidePopup();
+     createButton.addEventListener("click", onCreate);
+diff --git a/browser/components/contextualidentity/content/ContainerEditor.mjs b/browser/components/contextualidentity/content/ContainerEditor.mjs
+index 7d789c2a1d..7a352874f2 100644
+--- a/browser/components/contextualidentity/content/ContainerEditor.mjs
++++ b/browser/components/contextualidentity/content/ContainerEditor.mjs
+@@ -136,7 +136,9 @@ export class ContainerEditor {
+         color
+       );
+     } else {
+-      lazy.ContextualIdentityService.create(containerName, icon, color);
++      // Opz: the new identity, for "Add new container" to open a tab in it.
++      return lazy.ContextualIdentityService.create(containerName, icon, color);
+     }
++    return null;
+   }
+ }
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index 3dbd23bfec..00f05167f0 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -1348,10 +1348,18 @@ var TabContextMenu = {
+   },
+ 
+   createReopenInContainerMenu(event) {
++    let tabs = this.contextTabs;
+     createUserContextMenu(event, {
+       isContextMenu: true,
+       excludeUserContextId: this.contextTab.getAttribute("usercontextid"),
+       containerSource: "tab_context_menu",
++      // Opz: "Add new container" reopens the tabs in it, like the other items.
++      // The menu is gone by then, so the tabs are kept from here.
++      opzOnContainerCreated: userContextId =>
++        this.reopenInContainer(null, {
++          userContextId,
++          tabs: tabs.filter(tab => tab.isConnected && !tab.closing),
++        }),
+     });
+   },
+   duplicateSelectedTabs() {
+@@ -1364,12 +1372,13 @@ var TabContextMenu = {
+       gBrowser.moveTabTo(newTab, { tabIndex: newIndex++ });
+     }
+   },
+-  reopenInContainer(event) {
+-    let userContextId = parseInt(
+-      event.target.getAttribute("data-usercontextid")
+-    );
++  // Opz: opzTarget gives the container and tabs when called without the menu.
++  reopenInContainer(event, opzTarget = null) {
++    let userContextId =
++      opzTarget?.userContextId ??
++      parseInt(event.target.getAttribute("data-usercontextid"));
+ 
+-    for (let tab of this.contextTabs) {
++    for (let tab of opzTarget?.tabs ?? this.contextTabs) {
+       if (tab.getAttribute("usercontextid") == userContextId) {
+         continue;
+       }

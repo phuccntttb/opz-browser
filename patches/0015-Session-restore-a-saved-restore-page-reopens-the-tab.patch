@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Mon, 9 Nov 2026 19:19:11 +0700
+Subject: [PATCH] Session restore: a saved restore page reopens the tabs it
+ holds
+
+---
+ .../sessionstore/SessionStore.sys.mjs         | 65 +++++++++++++++++++
+ 1 file changed, 65 insertions(+)
+
+diff --git a/browser/components/sessionstore/SessionStore.sys.mjs b/browser/components/sessionstore/SessionStore.sys.mjs
+index 9fa4c8e8cc..d2675e046a 100644
+--- a/browser/components/sessionstore/SessionStore.sys.mjs
++++ b/browser/components/sessionstore/SessionStore.sys.mjs
+@@ -802,6 +802,8 @@ class _SessionStore {
+       );
+ 
+       if (state) {
++        state = this.#unwrapRestorePage(state);
++
+         // Initialize the splitViewId counter and migrate any string-based splitViewIds
+         this.#initSplitViewIds(state);
+ 
+@@ -7675,6 +7677,69 @@ class _SessionStore {
+    *          it isn't. One of "safe_mode", "many_crashes_old_session",
+    *          "many_crashes" or "old_session".
+    */
++  /**
++   * Opz: an about:sessionrestore page saved in the session (it was showing
++   * when the browser closed) is replaced by the tabs and windows it holds, so
++   * they come back without asking.
++   *
++   * @param {object} aState
++   * @returns {object}
++   */
++  #unwrapRestorePage(aState) {
++    let extraWindows = [];
++    for (let win of aState.windows ?? []) {
++      if (!win.tabs?.length) {
++        continue;
++      }
++      let tabs = [];
++      let unwrapped = false;
++      for (let tab of win.tabs) {
++        let inner = this.#restorePageSession(tab);
++        if (!inner) {
++          tabs.push(tab);
++          continue;
++        }
++        unwrapped = true;
++        inner = this.#unwrapRestorePage(inner);
++        let [first, ...rest] = inner.windows;
++        tabs.push(...(first.tabs ?? []));
++        extraWindows.push(...rest);
++      }
++      if (unwrapped) {
++        win.tabs = tabs;
++        win.selected = Math.min(win.selected ?? 1, tabs.length) || 1;
++      }
++    }
++    if (extraWindows.length) {
++      aState.windows.push(...extraWindows);
++    }
++    return aState;
++  }
++
++  /**
++   * @param {object} aTab
++   * @returns {object|null}
++   *   The session an about:sessionrestore or about:welcomeback tab holds.
++   */
++  #restorePageSession(aTab) {
++    let entry = aTab.entries?.[(aTab.index || aTab.entries.length) - 1];
++    if (
++      aTab.entries?.length != 1 ||
++      !["about:sessionrestore", "about:welcomeback"].includes(entry?.url)
++    ) {
++      return null;
++    }
++    let inner = aTab.formdata?.id?.sessionData ?? entry.formdata?.id?.sessionData;
++    try {
++      if (typeof inner == "string") {
++        inner = JSON.parse(inner);
++      }
++    } catch (e) {
++      return null;
++    }
++    return inner?.windows?.length ? inner : null;
++  }
++
+   #needsRestorePage(aState, aRecentCrashes) {
+     const SIX_HOURS_IN_MS = 6 * 60 * 60 * 1000;
+ 

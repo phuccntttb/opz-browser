@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 12 Nov 2026 15:13:15 +0700
+Subject: [PATCH] Toolbar: extension and menu buttons only show while hovering
+ the toolbar
+
+---
+ browser/themes/shared/toolbarbuttons.css | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
+index 9e19abc6fd..512decc79a 100644
+--- a/browser/themes/shared/toolbarbuttons.css
++++ b/browser/themes/shared/toolbarbuttons.css
+@@ -828,3 +828,26 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+     display: none;
+   }
+ }
++
++/* Opz: the extension buttons and the app menu button on the right of the
++ * toolbar are invisible until the pointer is over the toolbar (or one of them
++ * has keyboard focus or an open panel). They keep their place, so nothing
++ * shifts when they appear. */
++:root:not([customizing]) #nav-bar {
++  & .webextension-browser-action,
++  & #unified-extensions-button,
++  & #PanelUI-button {
++    opacity: 0;
++    transition: opacity 150ms ease;
++  }
++
++  &:hover,
++  &:focus-within,
++  &:has(toolbarbutton[open], toolbarbutton[checked]) {
++    & .webextension-browser-action,
++    & #unified-extensions-button,
++    & #PanelUI-button {
++      opacity: 1;
++    }
++  }
++}

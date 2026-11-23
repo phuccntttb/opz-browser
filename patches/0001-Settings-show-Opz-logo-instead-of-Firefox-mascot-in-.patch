@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 6 Nov 2026 23:48:52 +0700
+Subject: [PATCH] Settings: show Opz logo instead of Firefox mascot in
+ default-browser banner
+
+---
+ browser/components/preferences/main.js | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/browser/components/preferences/main.js b/browser/components/preferences/main.js
+index 6dcfd4bd0e..83718460b6 100644
+--- a/browser/components/preferences/main.js
++++ b/browser/components/preferences/main.js
+@@ -472,8 +472,9 @@ function createDefaultBrowserConfig({
+     l10nId: "is-default-browser-2",
+     control: "moz-promo",
+     controlAttrs: {
+-      imagesrc: "chrome://global/skin/illustrations/kit-happy.svg",
+-      imagedisplay: "cover",
++      // Opz: show the browser logo instead of the Firefox mascot (Kit).
++      imagesrc: "chrome://branding/content/about-logo.svg",
++      imagedisplay: "padded",
+     },
+   };
+ 
+@@ -494,8 +495,9 @@ function createDefaultBrowserConfig({
+       },
+     ],
+     controlAttrs: {
+-      imagesrc: "chrome://global/skin/illustrations/kit-concerned.svg",
+-      imagedisplay: "cover",
++      // Opz: show the browser logo instead of the Firefox mascot (Kit).
++      imagesrc: "chrome://branding/content/about-logo.svg",
++      imagedisplay: "padded",
+     },
+   };
+ 

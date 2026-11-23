@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 19 Nov 2026 17:43:19 +0700
+Subject: [PATCH] Tabs: in the expanded column the container icon sits where
+ the close button is
+
+---
+ browser/themes/shared/tabbrowser/tabs.css | 28 +++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/browser/themes/shared/tabbrowser/tabs.css b/browser/themes/shared/tabbrowser/tabs.css
+index 26adccd28e..9861a3fece 100644
+--- a/browser/themes/shared/tabbrowser/tabs.css
++++ b/browser/themes/shared/tabbrowser/tabs.css
+@@ -3629,3 +3629,31 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+     pointer-events: none;
+   }
+ }
++
++/* Opz: in the expanded column the container icon sits where the close button
++   is; hovering the tab shows the close button in its place. */
++#tabbrowser-tabs[orient="vertical"][expanded] .tabbrowser-tab[usercontextid]:not([opz-private]) {
++  .tab-icon-stack::after {
++    display: none;
++  }
++
++  > .tab-stack > .tab-content::after {
++    content: "";
++    flex: none;
++    width: var(--tab-content-button-size);
++    height: var(--tab-content-button-size);
++    margin-inline-end: calc(var(--tab-close-button-padding) / -2);
++    background: var(--identity-icon) center / 14px no-repeat;
++    -moz-context-properties: fill;
++    fill: var(--identity-icon-color);
++    pointer-events: none;
++  }
++
++  &:hover > .tab-stack > .tab-content::after {
++    display: none;
++  }
++
++  &:not(:hover) .tab-close-button {
++    visibility: collapse;
++  }
++}

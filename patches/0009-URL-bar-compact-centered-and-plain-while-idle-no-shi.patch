@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sun, 8 Nov 2026 22:18:40 +0700
+Subject: [PATCH] URL bar: compact, centered and plain while idle, no
+ shield/translate/star buttons
+
+---
+ browser/themes/shared/urlbar.css | 69 ++++++++++++++++++++++++++++++++
+ 1 file changed, 69 insertions(+)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index bbd8b16565..4918ed5f12 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1646,3 +1646,72 @@ toolbar[inactive="true"] .urlbar,
+     }
+   }
+ }
++
++/* Opz: while the address bar is idle (not focused, no results showing) it is
++ * only as wide as the address it shows plus its buttons, instead of filling
++ * the toolbar, sits in the middle of it and has no background. It grows back to the full width
++ * as soon as it is focused, so typing and the results list keep their room. */
++#urlbar:not([focused], [open], [popover-open], [usertyping], [searchmode]) {
++  flex: 0 1 auto;
++  margin-inline: auto;
++
++  /* No field background or border: just the address on the toolbar. */
++  > .urlbar-background {
++    background-color: transparent;
++    border-color: transparent;
++  }
++
++  /* Centered on the window, not on the gap between the toolbar buttons
++     (there are more buttons on the left than on the right). The width cap
++     keeps it clear of the buttons; a narrow window keeps it in the flow. */
++  @media (width >= 900px) {
++    position: fixed;
++    left: 50%;
++    translate: -50% 0;
++    max-width: calc(100vw - 640px);
++  }
++
++  > .urlbar-input-container,
++  > .urlbar-input-container > .urlbar-input-box,
++  > .urlbar-input-container > .urlbar-input-box > #urlbar-input {
++    flex: 0 1 auto;
++    min-width: 0;
++  }
++
++  > .urlbar-input-container > .urlbar-input-box > #urlbar-input {
++    field-sizing: content;
++  }
++}
++
++/* Opz: the address bar's container spans the toolbar, but while idle the bar
++ * itself is only as wide as the address. The empty part of the container
++ * drags the window like the rest of the toolbar; the bar does not (toolkit
++ * makes every toolbaritem no-drag). -moz-window-dragging is inherited, so the
++ * bar's contents follow it. */
++:root:not([customizing]) #urlbar-container {
++  -moz-window-dragging: drag;
++}
++
++#urlbar {
++  -moz-window-dragging: no-drag;
++}
++
++/* Opz: no shield, translate button or bookmark star in the address bar.
++ * The shield (#trust-icon-container, or the older tracking-protection icon
++ * when browser.urlbar.trustPanel.featureGate is off) still shows on insecure
++ * or breached sites, where it carries the "Not secure" warning.
++ * Bookmarking (Ctrl/Cmd+D) and "Translate page..." in the app menu still
++ * work; their panels anchor to the next visible node. */
++#trust-icon-container:not(.insecure, .breached),
++#tracking-protection-icon-container,
++#translations-button,
++#star-button-box {
++  display: none !important;
++}
++
++/* Opz: no block padding around the address bar, so the toolbar is as tall as
++ * its buttons whether the bar is idle (out of the flow, see above) or focused. */
++:root,
++:root[uidensity] {
++  --urlbar-container-padding-block: 0px;
++}
