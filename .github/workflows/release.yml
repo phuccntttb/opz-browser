@@ -37,7 +37,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write   # GitHub Releases (ci-github-release.sh)
   actions: write   # delete superseded compiler caches (ci-sccache.sh prune)
 
 # One run at a time per platform choice, so a manual Linux run does not wait
@@ -161,6 +161,14 @@ jobs:
       - name: Release
         run: |
           if [ "$PUBLISH" = true ]; then scripts/release.sh --publish; else scripts/release.sh; fi
+
+      # The installer on the version's GitHub Release, for the website's
+      # download links (.github/ci-github-release.sh).
+      - name: GitHub Release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-github-release.sh
 
       - uses: actions/upload-artifact@v4
         with:
@@ -293,6 +301,14 @@ jobs:
         run: |
           if [ "$PUBLISH" = true ]; then scripts/release.sh --publish; else scripts/release.sh; fi
 
+      # The installer on the version's GitHub Release, for the website's
+      # download links (.github/ci-github-release.sh).
+      - name: GitHub Release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-github-release.sh
+
       - name: Remove keychain
         if: always()
         run: |
@@ -402,6 +418,14 @@ jobs:
       - name: Release
         run: |
           if [ "$PUBLISH" = true ]; then scripts/release.sh --publish; else scripts/release.sh; fi
+
+      # The installer on the version's GitHub Release, for the website's
+      # download links (.github/ci-github-release.sh).
+      - name: GitHub Release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/ci-github-release.sh
 
       - uses: actions/upload-artifact@v4
         with:

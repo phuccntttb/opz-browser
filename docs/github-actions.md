@@ -8,6 +8,12 @@ macOS 26 Apple Silicon (runner `macos-26`, Xcode mới nhất có sẵn) vì ph�
 
 - **Push tag `v*`** (vd. `git tag v159.0.1-2 && git push origin v159.0.1-2`): build cả ba
   và **phát hành luôn**. Mọi máy đã cài sẽ tự cập nhật.
+- **Khi phát hành**, mỗi job còn tải bộ cài lên GitHub Release của phiên bản (tag là số phiên bản
+  không có `v`, vd. `159.0.1`, để không tự kích hoạt workflow), với tên cố định `opz-mac.dmg`,
+  `opz-win64.zip`, `opz-linux-x86_64.tar.xz`. Trang web tải qua
+  `https://github.com/phuccntttb/opz-browser/releases/latest/download/<tên file>`. Release chỉ được
+  đánh dấu Latest khi có đủ cả ba file (`.github/ci-github-release.sh`). Bản cập nhật tự động
+  (`.mar`, `update.xml`) vẫn nằm trên server của Opz.
 - **Actions → Release → Run workflow**: chọn hệ điều hành; mặc định không phát hành, chỉ
   build. Bộ cài nằm ở mục Artifacts của lần chạy, giữ 14 ngày.
 - Lần đầu biên dịch toàn bộ Firefox, mất vài tiếng mỗi hệ điều hành; giới hạn là 6 tiếng mỗi
