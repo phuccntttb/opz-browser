@@ -323,9 +323,21 @@ Trên Windows, `%BUILD_TARGET%` có thêm đuôi là CPU của máy đang chạy
 - Cùng phiên bản Firefox (vd. 159.0.1) nhưng BuildID mới vẫn được coi là bản mới.
 - Máy đang chạy bản artifact (không có updater) phải cài tay **một lần** bản full từ
   `.dmg`/`.tar.xz`. Từ đó trở đi tự cập nhật. Profile giữ nguyên.
-- Mỗi máy build chỉ ra được bản cho hệ điều hành của nó: Mac ra bản macOS, máy Linux
-  (`/mnt/ffbuild`) ra bản Linux, máy Windows (MozillaBuild) ra bản Windows. Các máy dùng
-  chung khoá và chung server.
+- Mỗi máy build ra bản cho hệ điều hành của nó: Mac ra bản macOS, máy Linux
+  (`/mnt/ffbuild`) ra bản Linux, máy Windows (MozillaBuild) ra bản Windows. Riêng máy Linux
+  còn build chéo được bản Windows x64 (cách CI của Mozilla và Zen làm, nhanh hơn build trên
+  Windows nhiều lần): cần `apt install msitools`, rồi chạy các script với `OPZ_TARGET=win`
+  (objdir riêng `obj-full-win`):
+
+  ```bash
+  export OPZ_TARGET=win OPZ_BUILD=full
+  scripts/bootstrap.sh && scripts/build.sh && scripts/release.sh
+  ```
+
+  `bootstrap.sh` tải Windows SDK và MSVC từ Microsoft (`get_vs.py` của Firefox) vào
+  `$FFB_ROOT/toolchain/vs`; configure tự tải wine. Không chạy được `signmar` của bản Windows,
+  nên `release.sh` ký MAR bằng openssl và gói Python `mar` của Mozilla (cùng kiểu chữ ký
+  RSA-SHA384). Các máy dùng chung khoá và chung server.
 - **Windows:** build không kèm Mozilla Maintenance Service, vì dịch vụ này chỉ chạy updater có
   chữ ký của Mozilla (`mozconfig.full`). Giải nén zip vào thư mục user ghi được, vd.
   `%LOCALAPPDATA%\Opz`, thì Opz tự cập nhật mà không cần quyền admin. Đặt trong
@@ -334,18 +346,19 @@ Trên Windows, `%BUILD_TARGET%` có thêm đuôi là CPU của máy đang chạy
 
 ### Phát hành bằng GitHub Actions
 
-`.github/workflows/release.yml` build từ đầu trên máy của GitHub (Ubuntu 24.04, macOS 15
-Apple Silicon, Windows Server 2022 với MozillaBuild), rồi chạy `scripts/release.sh` như trên:
-ra `.tar.xz` cho Linux, `.dmg` đã ký và notarize cho macOS, `.win64.zip` cho Windows, kèm
-file `.mar` đã ký và `update.xml` cho từng hệ điều hành. Windows không có rsync, nên job
-`publish-windows` (Ubuntu) đẩy bản Windows lên server bằng `scripts/publish.sh`.
+`.github/workflows/release.yml` build từ đầu trên máy của GitHub, rồi chạy
+`scripts/release.sh` như trên: ra `.tar.xz` cho Linux, `.dmg` đã ký và notarize cho macOS,
+`.win64.zip` cho Windows, kèm file `.mar` đã ký và `update.xml` cho từng hệ điều hành. Linux
+và Windows build trên Ubuntu 24.04 (Windows build chéo, `OPZ_TARGET=win`), macOS build trên
+macOS 15 Apple Silicon vì phải ký và notarize trên Mac.
 
 - **Push tag `v*`** (vd. `git tag v159.0.1-2 && git push origin v159.0.1-2`): build cả ba
   và **phát hành luôn**. Mọi máy đã cài sẽ tự cập nhật.
 - **Actions → Release → Run workflow**: chọn hệ điều hành; mặc định không phát hành, chỉ
   build. Bộ cài nằm ở mục Artifacts của lần chạy, giữ 14 ngày.
-- Mỗi lần là một máy trắng biên dịch lại toàn bộ Firefox, nên mất vài tiếng mỗi hệ điều hành.
-  Giới hạn là 6 tiếng mỗi job.
+- Lần đầu biên dịch toàn bộ Firefox, mất vài tiếng mỗi hệ điều hành; giới hạn là 6 tiếng mỗi
+  job. Kết quả biên dịch (sccache) được giữ trong cache của Actions, kể cả khi build lỗi hay
+  hết giờ (bước Build tự dừng ở phút 320), nên các lần sau chỉ biên dịch lại phần thay đổi.
 
 **Cài đặt một lần** (trên Mac đang giữ khoá, `gh` đăng nhập tài khoản có quyền với repo):
 

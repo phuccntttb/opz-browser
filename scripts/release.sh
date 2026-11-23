@@ -20,9 +20,12 @@
 #     latest/opz-mac.dmg | opz-linux-x86_64.tar.xz | opz-win64.zip  -> files/<installer>
 # Each release replaces <BUILD_TARGET>/update.xml; old MARs stay (an update
 # that is downloading keeps working).
-# Windows (MozillaBuild): a zip, unsigned; Windows asks for
-# %BUILD_TARGET% plus the CPU it runs on (WINNT_x86_64-msvc-x64, and -aarch64
-# for ARM machines running the x64 build), so update.xml is written to both.
+# Windows (MozillaBuild, or cross-built on Linux with OPZ_TARGET=win): a zip,
+# unsigned; Windows asks for %BUILD_TARGET% plus the CPU it runs on
+# (WINNT_x86_64-msvc-x64, and -aarch64 for ARM machines running the x64
+# build), so update.xml is written to both. A cross build cannot run the
+# build's own Windows NSS tools, so its MAR is signed with openssl and
+# Mozilla's Python "mar" package instead of signmar.
 set -euo pipefail
 export OPZ_BUILD=full
 . "$(dirname "$0")/../env.sh"
@@ -54,7 +57,11 @@ objdir="$OPZ_OBJDIR"
 bin="$objdir/dist/bin"
 ini="$bin/application.ini"
 [ -f "$ini" ] || die "$ini missing; run: OPZ_BUILD=full scripts/build.sh"
-for t in signmar certutil pk12util; do [ -x "$bin/$t" ] || die "$bin/$t missing (full build?)"; done
+cross=0
+[ "$OPZ_TARGET" = "$OPZ_OS" ] || cross=1
+if [ "$cross" -eq 0 ]; then
+    for t in signmar certutil pk12util; do [ -x "$bin/$t" ] || die "$bin/$t missing (full build?)"; done
+fi
 mar_tool="$objdir/dist/host/bin/mar"
 [ -x "$mar_tool" ] || die "$mar_tool missing"
 command -v xz >/dev/null || die "xz not found (macOS: brew install xz; Linux: apt install xz-utils)"
@@ -65,7 +72,7 @@ nss() { local t="$1"; shift; DYLD_LIBRARY_PATH="$bin" LD_LIBRARY_PATH="$bin" "$b
 conf() { sed -n "s/^$1 = //p" "$objdir/config/autoconf.mk" | head -1; }
 build_target="$(conf OS_TARGET)_$(conf TARGET_XPCOM_ABI)"      # = %BUILD_TARGET%
 # Directories installed copies ask for update.xml in (see the top).
-if [ "$OPZ_OS" = win ]; then update_dirs=("$build_target-x64" "$build_target-aarch64")
+if [ "$OPZ_TARGET" = win ]; then update_dirs=("$build_target-x64" "$build_target-aarch64")
 else update_dirs=("$build_target"); fi
 mar_channel="$(conf MAR_CHANNEL_ID)"
 [ -n "$mar_channel" ] || die "MAR_CHANNEL_ID not set in the build (mozconfig.full)"
@@ -107,7 +114,7 @@ with open(dst, "w") as f:
     f.write("\n")
 EOF
 
-if [ "$OPZ_OS" = mac ]; then
+if [ "$OPZ_TARGET" = mac ]; then
     sign_id=
     if [ -n "${OPZ_MAC_SIGN_IDENTITY:-}" ]; then
         sign_id="$(opz_mac_sign_identity)" || die "no signing identity"
@@ -192,7 +199,7 @@ if [ "$OPZ_OS" = mac ]; then
             && echo "release: Gatekeeper accepts $installer" \
             || echo "release: WARNING: Gatekeeper does not accept $installer (not notarized?)" >&2
     fi
-elif [ "$OPZ_OS" = win ]; then
+elif [ "$OPZ_TARGET" = win ]; then
     # mach package: dist/opz-<ver>.en-US.win64.zip holding firefox/; repack it
     # as Opz/ with Opz's policies and prefs. (zip/unzip are not always in
     # MozillaBuild, Python is.)
@@ -209,8 +216,13 @@ elif [ "$OPZ_OS" = win ]; then
     cp "$policies" "$app/distribution/policies.json"
     cp "$OPZ_ROOT/prefs/opz.js" "$app/browser/defaults/preferences/00-opz.js"
     (cd "$app" && python3 "$OPZ_ENGINE/config/createprecomplete.py")
-    # A GUI program: --version only prints into a pipe.
-    ver_line="$("$app/firefox.exe" --version 2>/dev/null | cat || true)"
+    if [ "$cross" -eq 0 ]; then
+        # A GUI program: --version only prints into a pipe.
+        ver_line="$("$app/firefox.exe" --version 2>/dev/null | cat || true)"
+    else
+        # Cannot run it here: what --version prints, from application.ini.
+        ver_line="$(sed -n 's/^Vendor=//p' "$app/application.ini") $(sed -n 's/^Name=//p' "$app/application.ini") $(sed -n 's/^Version=//p' "$app/application.ini")"
+    fi
     installer="$name.win64.zip"
     rm -f "$out/$installer"
     python3 - "$stage" Opz "$out/$installer" <<'EOF'
@@ -239,7 +251,7 @@ fi
 case "$ver_line" in *"Opz $version"*) ;; *) die "version check failed: '$ver_line'" ;; esac
 # The updater compares update.xml with the build ID compiled into libxul;
 # every build ID in the package must be that one.
-case "$OPZ_OS" in
+case "$OPZ_TARGET" in
     mac) libxul="$app/Contents/MacOS/XUL"; appbin="$app/Contents/MacOS/firefox"
          inis=("$app/Contents/Resources/application.ini" "$app/Contents/Resources/platform.ini") ;;
     win) libxul="$app/xul.dll"; appbin="$app/firefox.exe"
@@ -267,25 +279,40 @@ MAR="$mar_tool" MOZ_PRODUCT_VERSION="$version" MAR_CHANNEL_ID="$mar_channel" \
     > "$stage/make_full_update.log" 2>&1 \
     || { tail -20 "$stage/make_full_update.log" >&2; die "make_full_update.sh failed"; }
 
-db="$stage/nssdb"
-mkdir -p "$db"
-nss certutil -N -d "$db" --empty-password
-openssl pkcs12 -export -inkey "$keydir/primary.key.pem" -in "$keydir/primary.cert.pem" \
-    -name opz-primary -passout pass: -out "$stage/primary.p12"
-nss pk12util -i "$stage/primary.p12" -d "$db" -W "" -K "" >/dev/null
-rm -f "$stage/primary.p12"
-nss signmar -d "$db" -n opz-primary -s "$stage/unsigned.mar" "$site/files/$mar"
-rm -rf "$db"
-# Check it the way the updater will: against the certificate compiled in.
-nss signmar -D "$OPZ_ROOT/updates/certs/primary.der" -v "$site/files/$mar" \
-    || die "signature check of $mar failed"
+if [ "$cross" -eq 0 ]; then
+    db="$stage/nssdb"
+    mkdir -p "$db"
+    nss certutil -N -d "$db" --empty-password
+    openssl pkcs12 -export -inkey "$keydir/primary.key.pem" -in "$keydir/primary.cert.pem" \
+        -name opz-primary -passout pass: -out "$stage/primary.p12"
+    nss pk12util -i "$stage/primary.p12" -d "$db" -W "" -K "" >/dev/null
+    rm -f "$stage/primary.p12"
+    nss signmar -d "$db" -n opz-primary -s "$stage/unsigned.mar" "$site/files/$mar"
+    rm -rf "$db"
+    # Check it the way the updater will: against the certificate compiled in.
+    nss signmar -D "$OPZ_ROOT/updates/certs/primary.der" -v "$site/files/$mar" \
+        || die "signature check of $mar failed"
+else
+    # The same RSA-SHA384 signature signmar makes: hash the MAR with a signature
+    # block in place, sign the hash with openssl, put the signature in.
+    marpy="$FFB_ROOT/toolchain/mar-venv"
+    [ -x "$marpy/bin/mar" ] || { python3 -m venv "$marpy" && "$marpy/bin/pip" -q install "mar==3.2.1"; } \
+        || die "could not install Mozilla's mar package"
+    "$marpy/bin/mar" --hash sha384 "$stage/unsigned.mar" | openssl base64 -d -A > "$stage/mar.hash"
+    openssl pkeyutl -sign -inkey "$keydir/primary.key.pem" -pkeyopt digest:sha384 \
+        -in "$stage/mar.hash" -out "$stage/mar.sig"
+    "$marpy/bin/mar" --add-signature "$stage/unsigned.mar" "$site/files/$mar" "$stage/mar.sig"
+    openssl x509 -inform der -in "$OPZ_ROOT/updates/certs/primary.der" -pubkey -noout > "$stage/mar.pub.pem"
+    "$marpy/bin/mar" -k "$stage/mar.pub.pem" -v "$site/files/$mar" \
+        || die "signature check of $mar failed"
+fi
 cp "$out/$installer" "$site/files/$installer"
 # Stable download link for the website (latest/opz-mac.dmg,
 # latest/opz-linux-x86_64.tar.xz, latest/opz-win64.zip): a symlink to this
 # release's installer. (On Windows, ln makes a copy; scripts/publish.sh turns
 # it back into a link.)
 mkdir -p "$site/latest"
-case "$OPZ_OS" in
+case "$OPZ_TARGET" in
     mac) latest=opz-mac.dmg ;;
     win) latest=opz-win64.zip ;;
     *)   latest="opz-$arch.tar.xz" ;;

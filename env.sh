@@ -14,6 +14,16 @@ case "$(uname -s)" in
     MINGW*|MSYS*) OPZ_OS=win ;;   # MozillaBuild (MSYS2) shell or Git Bash
     *)            OPZ_OS=linux ;;
 esac
+# OPZ_TARGET: the OS the build is for, by default this machine's. The one
+# cross build is OPZ_TARGET=win on Linux (full build only): Windows built the
+# way Mozilla's and Zen's CI build it, much faster than on a Windows machine.
+# scripts/bootstrap.sh fetches the Windows SDK; configure fetches wine.
+OPZ_TARGET="${OPZ_TARGET:-$OPZ_OS}"
+case "$OPZ_OS:$OPZ_TARGET" in
+    linux:linux|mac:mac|win:win|linux:win) ;;
+    *)  echo "env.sh: ERROR: cannot build for OPZ_TARGET=$OPZ_TARGET on $OPZ_OS" >&2
+        return 1 2>/dev/null || exit 1 ;;
+esac
 
 # Repo root = directory holding this file. On Windows use the C:/... form:
 # bash, git and the native Windows python that runs mach all understand it.
@@ -76,7 +86,7 @@ case "$OPZ_OS:$OPZ_ROOT" in
     *)           OPZ_ENGINE="$OPZ_ROOT/engine" ;;
 esac
 
-export FFB_ROOT OPZ_ROOT OPZ_OS OPZ_ENGINE
+export FFB_ROOT OPZ_ROOT OPZ_OS OPZ_TARGET OPZ_ENGINE
 
 # Build flavour:
 #   OPZ_BUILD=artifact  (default) prebuilt C++/Rust from Mozilla CI; fast, for
@@ -91,6 +101,11 @@ case "$OPZ_BUILD" in
     *)  echo "env.sh: ERROR: OPZ_BUILD must be artifact or full (got $OPZ_BUILD)" >&2
         return 1 2>/dev/null || exit 1 ;;
 esac
+if [ "$OPZ_TARGET" != "$OPZ_OS" ]; then
+    [ "$OPZ_BUILD" = full ] || { echo "env.sh: ERROR: OPZ_TARGET=$OPZ_TARGET needs OPZ_BUILD=full" >&2
+                                 return 1 2>/dev/null || exit 1; }
+    OPZ_OBJDIR="$OPZ_ENGINE/obj-full-$OPZ_TARGET"
+fi
 # OPZ_OBJDIR must match MOZ_OBJDIR in the mozconfig.
 
 # --- Toolchains (shared between projects on this disk) ----------------------

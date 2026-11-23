@@ -5,9 +5,11 @@
 # patch "Updater: trust Opz's MAR signing certificates"). Releases are made
 # from this build (scripts/release.sh).
 ac_add_options --enable-project=browser
-mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-full
 ac_add_options --enable-optimize
 ac_add_options --disable-debug
+# No debug info: nothing uses it (no crash reports), and without it the build
+# is faster and much smaller (as Zen's release builds).
+ac_add_options --disable-debug-symbols
 ac_add_options --disable-tests
 # Compiler cache ($SCCACHE_DIR on the build drive, see env.sh): rebuilds after
 # a small change or a Firefox update only recompile what changed.
@@ -44,9 +46,33 @@ ac_add_options ACCEPTED_MAR_CHANNEL_IDS=opz-release
 # Mozilla, so it is useless to Opz. Opz is shipped as a zip meant for a folder
 # the user can write to (%LOCALAPPDATA%\Opz), where the updater needs no admin
 # rights. (The option only exists on Windows, so it is set only there.)
-if [ "${OPZ_OS:-}" = win ]; then
+if [ "${OPZ_TARGET:-${OPZ_OS:-}}" = win ]; then
     ac_add_options --disable-maintenance-service
 fi
 
 # No Mozilla crash reports (they would be sent as Firefox to Mozilla).
 ac_add_options --disable-crashreporter
+
+# --- Objdir and cross build ---------------------------------------------------
+# OPZ_TARGET=win on Linux (env.sh): Windows x64, as Zen's CI builds it
+# (configs/windows/mozconfig there). The Windows SDK and MSVC headers/libs come
+# from scripts/bootstrap.sh (Firefox's get_vs.py), wine (for midl.exe) from
+# configure's bootstrap.
+if [ "${OPZ_TARGET:-}" = win ] && [ "${OPZ_OS:-}" != win ]; then
+    mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-full-win
+    ac_add_options --target=x86_64-pc-windows-msvc
+    ac_add_options --enable-bootstrap
+    export WINSYSROOT="$FFB_ROOT/toolchain/vs"
+    export WINEDEBUG=-all
+    # The MSVC runtime DLLs packaged next to firefox.exe.
+    for _opz_d in "$WINSYSROOT"/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT; do
+        [ -d "$_opz_d" ] && export WIN32_REDIST_DIR="$_opz_d"
+    done
+    # clang's Windows runtime libraries for the linker.
+    for _opz_d in "$MOZBUILD_STATE_PATH"/clang/lib/clang/*/lib/windows; do
+        [ -d "$_opz_d" ] && export LIB="$_opz_d"
+    done
+    unset _opz_d
+else
+    mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-full
+fi

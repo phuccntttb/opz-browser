@@ -48,5 +48,20 @@ finally:
     init.unlink(missing_ok=True)
 EOF
 fi
+# Cross build for Windows (OPZ_TARGET=win on Linux, see mozconfig.full): the
+# Rust standard library for Windows, and the MSVC headers/libraries and the
+# Windows SDK, downloaded from Microsoft by Firefox's own get_vs.py (needs
+# msiextract: apt install msitools).
+if [ "$OPZ_TARGET" = win ] && [ "$OPZ_OS" != win ]; then
+    "$CARGO_HOME/bin/rustup" target add x86_64-pc-windows-msvc
+    vs="$FFB_ROOT/toolchain/vs"
+    if [ ! -d "$vs/VC" ]; then
+        command -v msiextract >/dev/null || { echo "bootstrap: msiextract not found (apt install msitools)" >&2; exit 1; }
+        rm -rf "$vs.tmp"
+        ./mach python --virtualenv build taskcluster/scripts/misc/get_vs.py build/vs/vs2026.yaml "$vs.tmp"
+        mv "$vs.tmp" "$vs"
+    fi
+    echo "bootstrap: Windows SDK and MSVC in $vs"
+fi
 [ "$OPZ_BUILD" != full ] || "$CARGO_HOME/bin/rustc" --version
 opz_guard_check

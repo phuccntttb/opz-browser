@@ -1,7 +1,8 @@
 # Build Opz from scratch on GitHub's runners and release it (scripts/release.sh):
 # Linux x86_64 tarball, macOS (Apple Silicon) .dmg and Windows x64 zip, each
 # with its signed update (.mar) and update.xml, published to the update server.
-# Windows has no rsync: its files are published by the job publish-windows.
+# Linux and Windows build on Ubuntu (Windows is cross-built, as Mozilla's and
+# Zen's CI do it); macOS builds on macOS, where it is signed and notarized.
 #
 # Runs when a tag v* is pushed (always publishes), or by hand from the
 # Actions tab ("Run workflow"), where publishing is off unless ticked.
@@ -12,7 +13,7 @@
 #
 # Secrets (Settings -> Secrets and variables -> Actions); scripts/ci-secrets.sh
 # sets them all:
-#   MAR_PRIMARY_KEY                 $FFB_ROOT/keys/mar/primary.key.pem (both jobs)
+#   MAR_PRIMARY_KEY                 $FFB_ROOT/keys/mar/primary.key.pem (all jobs)
 #   MAC_DEVELOPER_ID_P12            Developer ID Application cert + key, base64 .p12
 #   MAC_DEVELOPER_ID_P12_PASSWORD   its password
 #   APPLE_ID, APPLE_APP_PASSWORD    for notarytool (app-specific password)
@@ -49,7 +50,7 @@ concurrency:
 env:
   # Runners have no separate system disk to protect (env.sh guard).
   OPZ_ROOT_MAX_LOSS_MB: '1000000'
-  # Compiler cache. 3G per OS keeps the three OSes inside the repo's 10 GB
+  # Compiler cache. 3G per job keeps the three jobs inside the repo's 10 GB
   # Actions cache. The server stays up for the whole build, and if it dies
   # anyway the compiler runs without it instead of failing the build.
   SCCACHE_CACHE_SIZE: 3G
@@ -104,8 +105,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /mnt/ffbuild/cache/sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ runner.os }}-
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ github.job }}-
 
       - name: Fetch Firefox, toolchains, patches
         run: |
@@ -135,14 +136,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /mnt/ffbuild/cache/sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Drop older compiler caches
         continue-on-error: true
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: .github/ci-sccache.sh prune sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:
@@ -203,8 +204,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /Volumes/ffbuild/ffbuild/cache/sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ runner.os }}-
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ github.job }}-
 
       - name: Fetch Firefox, toolchains, patches
         run: |
@@ -234,14 +235,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /Volumes/ffbuild/ffbuild/cache/sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Drop older compiler caches
         continue-on-error: true
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: .github/ci-sccache.sh prune sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:
@@ -279,63 +280,53 @@ jobs:
             /Volumes/ffbuild/opz/dist/release/site/*/update.xml
           retention-days: 14
 
+  # Windows x64, cross-built on Linux like Mozilla's and Zen's CI (OPZ_TARGET,
+  # env.sh / mozconfig.full): several times faster than a Windows runner.
   windows:
     if: github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'windows'
-    runs-on: windows-2022
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
-      # MozillaBuild's bash, as its start-shell.bat sets it up: stay in the
-      # working directory, keep the Windows PATH (python3, the runner's tools).
-      MOZILLABUILD: 'C:\mozilla-build\'
-      CHERE_INVOKING: '1'
-      MSYS2_PATH_TYPE: inherit
+      OPZ_TARGET: win
     defaults:
       run:
-        shell: C:\mozilla-build\msys2\usr\bin\bash.exe --login -eo pipefail {0}
+        working-directory: /mnt/ffbuild/opz
     steps:
-      - name: Git line endings, Defender
-        shell: pwsh
-        run: |
-          # Scripts and patches must keep LF (the runner's git defaults to CRLF).
-          git config --global core.autocrlf false
-          git config --global core.longpaths true
-          # Real-time scanning slows a Firefox build down a lot.
-          try {
-            Add-MpPreference -ExclusionPath 'C:\ffbuild', 'C:\mozilla-build', $env:GITHUB_WORKSPACE
-            Set-MpPreference -DisableRealtimeMonitoring $true
-          } catch { Write-Host "Defender: $_" }
-          Get-PSDrive -PSProvider FileSystem | Format-Table Name, Used, Free
-
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Install MozillaBuild
-        shell: pwsh
+      - name: Make room and set up /mnt/ffbuild
+        working-directory: /
         run: |
-          $setup = Join-Path $env:RUNNER_TEMP 'MozillaBuildSetup.exe'
-          Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile $setup
-          Start-Process -FilePath $setup -ArgumentList '/S' -Wait
-          Get-Content 'C:\mozilla-build\VERSION'
-          # python3 for mach and the scripts; openssl from Git (a native build,
-          # so it does not mix with MozillaBuild's MSYS2), last in PATH.
-          'C:\mozilla-build\bin', 'C:\mozilla-build\python3' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
-          "OPENSSL_DIR_FOR_OPZ=C:\Program Files\Git\mingw64\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-
-      - name: Tools check
-        run: |
-          export PATH="$PATH:$(cygpath -u "$OPENSSL_DIR_FOR_OPZ")"
-          echo "PATH_APPEND=$(cygpath -u "$OPENSSL_DIR_FOR_OPZ")" >> "$GITHUB_ENV"
-          uname -a; python3 --version; openssl version; command -v xz rsync || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/share/swift
+          sudo docker image prune -af > /dev/null || true
+          df -h / /mnt
+          # env.sh wants the build drive mounted at /mnt/ffbuild: bind-mount a
+          # directory from whichever disk has more room.
+          if [ "$(df -B1 --output=avail /mnt | tail -1)" -gt "$(df -B1 --output=avail / | tail -1)" ]; then
+            store=/mnt/ffbuild-store
+          else
+            store=/home/runner/ffbuild-store
+          fi
+          sudo mkdir -p "$store" /mnt/ffbuild
+          sudo chown "$USER": "$store"
+          sudo mount --bind "$store" /mnt/ffbuild
+          mkdir -p /mnt/ffbuild/opz
+          cp -a "$GITHUB_WORKSPACE/." /mnt/ffbuild/opz/
+          sudo apt-get install -y --no-install-recommends xz-utils rsync unzip msitools > /dev/null
 
       - name: Restore compiler cache
         uses: actions/cache/restore@v4
         with:
-          path: C:\ffbuild\cache\sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ runner.os }}-
+          path: /mnt/ffbuild/cache/sccache
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ github.job }}-
 
       - name: Fetch Firefox, toolchains, patches
         run: |
-          export PATH="$PATH:$PATH_APPEND"
           scripts/fetch.sh
           OPZ_BUILD=full scripts/bootstrap.sh
           scripts/apply.sh
@@ -346,9 +337,7 @@ jobs:
         timeout-minutes: 320
         env:
           SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
-        run: |
-          export PATH="$PATH:$PATH_APPEND"
-          OPZ_BUILD=full scripts/build.sh
+        run: OPZ_BUILD=full scripts/build.sh
 
       # Also after a failed or timed-out build: the next run resumes from it.
       # Not from tag runs (their cache is only visible to that tag).
@@ -357,61 +346,41 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
         env:
           SCCACHE_ERROR_LOG: ${{ runner.temp }}/sccache-error.log
-        run: |
-          export PATH="$PATH:$PATH_APPEND"
-          .github/ci-sccache.sh stop
+        run: .github/ci-sccache.sh stop
 
       - name: Save compiler cache
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
         uses: actions/cache/save@v4
         with:
-          path: C:\ffbuild\cache\sccache
-          key: sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /mnt/ffbuild/cache/sccache
+          key: sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Drop older compiler caches
         continue-on-error: true
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.ref_type == 'branch' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/ci-sccache.sh prune sccache-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: .github/ci-sccache.sh prune sccache-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: MAR signing key
         env:
           MAR_PRIMARY_KEY: ${{ secrets.MAR_PRIMARY_KEY }}
-        run: |
-          export PATH="$PATH:$PATH_APPEND"
-          .github/ci-keys.sh mar
+        run: .github/ci-keys.sh mar
 
-      - name: Release (zip, MAR, update.xml)
+      - name: Deploy key
+        if: env.PUBLISH == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: .github/ci-keys.sh deploy
+
+      - name: Release
         run: |
-          export PATH="$PATH:$PATH_APPEND"
-          scripts/release.sh
+          if [ "$PUBLISH" = true ]; then scripts/release.sh --publish; else scripts/release.sh; fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: opz-windows
-          path: dist/release/opz-*.win64.zip
+          path: |
+            /mnt/ffbuild/opz/dist/release/opz-*
+            /mnt/ffbuild/opz/dist/release/site/*/update.xml
           retention-days: 14
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: opz-windows-site
-          path: dist/release/site/
-          retention-days: 14
-
-  publish-windows:
-    needs: windows
-    if: github.event_name == 'push' || inputs.publish
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: opz-windows-site
-          path: site
-      - name: Deploy key
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: .github/ci-keys.sh deploy
-      - name: Publish
-        run: scripts/publish.sh site

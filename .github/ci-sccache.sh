@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Compiler cache (sccache) on GitHub Actions (.github/workflows/release.yml).
 # $SCCACHE_DIR is restored from and saved to the Actions cache, one entry per
-# OS, so a run only recompiles what changed since the last saved run.
+# job (linux, mac, windows), so a run only recompiles what changed since the
+# last saved run.
 #   ci-sccache.sh stop        print sccache's stats and errors and stop its
 #                             server, so $SCCACHE_DIR is idle while it is saved
-#   ci-sccache.sh prune KEY   delete this ref's other sccache-<OS>- entries
+#   ci-sccache.sh prune KEY   delete this ref's other sccache-<job>- entries
 #                             (an Actions cache holds 10 GB per repo; keeping
-#                             one entry per OS stops one OS evicting another)
+#                             one entry per job stops one evicting another)
 set -euo pipefail
 [ -n "${GITHUB_ACTIONS:-}" ] || { echo "ci-sccache: only for GitHub Actions" >&2; exit 1; }
 
@@ -28,7 +29,7 @@ stop)
     ;;
 prune)
     key="${2:?usage: ci-sccache.sh prune KEY}"
-    ids="$(gh cache list -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "sccache-$RUNNER_OS-" \
+    ids="$(gh cache list -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "sccache-$GITHUB_JOB-" \
         --limit 100 --json id,key -q ".[] | select(.key != \"$key\") | .id")"
     for id in $ids; do
         gh cache delete "$id" -R "$GITHUB_REPOSITORY" && echo "ci-sccache: deleted cache $id"
