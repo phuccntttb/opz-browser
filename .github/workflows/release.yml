@@ -202,8 +202,16 @@ jobs:
           mkdir -p /Volumes/ffbuild/opz
           cp -a "$GITHUB_WORKSPACE/." /Volumes/ffbuild/opz/
           # Real rsync: macOS's openrsync cannot talk to rrsync on the server.
+          # Only rsync goes ahead in PATH: all of Homebrew's bin would also put
+          # its python3 ahead of the one set up above.
           brew install --quiet rsync xz
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix rsync)/bin" >> "$GITHUB_PATH"
+          # The image's Homebrew rustup: its rustc shim, run by mach before
+          # bootstrap.sh installs Rust, half-installs a toolchain into our
+          # RUSTUP_HOME and rustup-init then fails on it.
+          brew uninstall --quiet --ignore-dependencies rustup rust 2>/dev/null || true
+          rm -rf ~/.cargo ~/.rustup
+          command -v rustup rustc cargo || echo "no other Rust on PATH"
 
       - name: Restore compiler cache
         uses: actions/cache/restore@v4

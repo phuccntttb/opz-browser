@@ -45,6 +45,10 @@ fi
 # $CARGO_HOME/$RUSTUP_HOME on the build disk, and without --modify-path
 # (rustup would otherwise edit ~/.profile / ~/.zshrc; env.sh sets PATH).
 if [ "$OPZ_BUILD" = full ] && [ ! -x "$CARGO_HOME/bin/rustc" ]; then
+    # Without our rustc, anything in $RUSTUP_HOME is a half install (an
+    # interrupted run, or another rustup's shim run with our RUSTUP_HOME),
+    # which rustup-init cannot install over.
+    find "$RUSTUP_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     ./mach python - <<'EOF'
 import os, stat, subprocess, tempfile
 from pathlib import Path
