@@ -170,7 +170,7 @@ jobs:
 
   mac:
     if: github.event_name == 'push' || inputs.platforms == 'all' || inputs.platforms == 'mac'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 360
     defaults:
       run:
@@ -184,11 +184,16 @@ jobs:
       - name: Make room and set up /Volumes/ffbuild
         working-directory: /
         run: |
-          # Keep only the selected Xcode (codesign, notarytool, stapler).
-          keep="$(cd "$(xcode-select -p)/../.." && pwd -P)"
+          # Use the newest Xcode (Firefox 159 wants the macOS 26.5 SDK or later)
+          # and delete the others to make room.
+          newest="$(printf '%s\n' /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$newest"
+          keep="$(cd "$newest" && pwd -P)"
           for x in /Applications/Xcode*.app; do
-            [ "$(cd "$x" && pwd -P)" = "$keep" ] || [ -L "$x" ] || sudo rm -rf "$x"
+            [ -L "$x" ] || [ "$(cd "$x" && pwd -P)" = "$keep" ] || sudo rm -rf "$x"
           done
+          xcodebuild -version
+          echo "macOS SDK $(xcrun --show-sdk-version)"
           rm -rf ~/Library/Android
           df -h /
           # env.sh wants the repo on a volume under /Volumes.

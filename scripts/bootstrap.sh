@@ -15,9 +15,30 @@ case "$OPZ_BUILD" in
     full) choice=browser ;;
     *)    choice=browser_artifact_mode ;;
 esac
-./mach --no-interactive bootstrap \
+if ! ./mach --no-interactive bootstrap \
     --application-choice "$choice" \
-    --no-system-changes "$@"
+    --no-system-changes "$@"; then
+    # mach bootstrap finds its toolchains with a throwaway configure whose log
+    # it keeps in memory, so when a configure check dies (say, a macOS SDK too
+    # old) it exits 1 without saying why. Run that configure again, logging.
+    echo "bootstrap: mach bootstrap failed; its configure log:" >&2
+    args='"--with-ccache=sccache", "--enable-project=browser"'
+    [ "$OPZ_BUILD" = full ] || args="$args, \"--enable-artifact-builds\""
+    ./mach python - <<EOF >&2 || true
+import logging, sys
+from mozbuild import bootstrap as b
+_raw = b._raw_sandbox
+def raw(extra_args=[]):
+    s = _raw(extra_args)
+    log = logging.getLogger("moz.configure")
+    log.setLevel(logging.INFO)
+    log.addHandler(logging.StreamHandler(sys.stderr))
+    return s
+b._raw_sandbox = raw
+b.bootstrap_all_toolchains_for([$args])
+EOF
+    exit 1
+fi
 
 # With --no-system-changes mach stops before installing Rust. Do that step
 # here with mach's own pinned rustup-init (URL + sha256 from mozboot), into
