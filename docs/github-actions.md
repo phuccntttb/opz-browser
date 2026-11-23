@@ -2,7 +2,7 @@
 
 `.github/workflows/release.yml` build từ đầu trên máy của GitHub, rồi chạy
 `scripts/release.sh` (xem [Bản tự cập nhật](self-update.md)): ra `.tar.xz` cho Linux, `.dmg` đã ký và notarize cho macOS,
-`.win64.zip` cho Windows, kèm file `.mar` đã ký và `update.xml` cho từng hệ điều hành. Linux
+`.win64.zip` và bộ cài `-setup.exe` cho Windows, kèm file `.mar` đã ký và `update.xml` cho từng hệ điều hành. Linux
 và Windows build trên Ubuntu 24.04 (Windows build chéo, `OPZ_TARGET=win`), macOS build trên
 macOS 26 Apple Silicon (runner `macos-26`, Xcode mới nhất có sẵn) vì phải ký và notarize trên Mac.
 
@@ -10,9 +10,9 @@ macOS 26 Apple Silicon (runner `macos-26`, Xcode mới nhất có sẵn) vì ph�
   và **phát hành luôn**. Mọi máy đã cài sẽ tự cập nhật.
 - **Khi phát hành**, mỗi job còn tải bộ cài lên GitHub Release của phiên bản (tag là số phiên bản
   không có `v`, vd. `159.0.1`, để không tự kích hoạt workflow), với tên cố định `opz-mac.dmg`,
-  `opz-win64.zip`, `opz-linux-x86_64.tar.xz`. Trang web tải qua
+  `opz-win64-setup.exe`, `opz-win64.zip`, `opz-linux-x86_64.tar.xz`. Trang web tải qua
   `https://github.com/phuccntttb/opz-browser/releases/latest/download/<tên file>`. Release chỉ được
-  đánh dấu Latest khi có đủ cả ba file (`.github/ci-github-release.sh`). Bản cập nhật tự động
+  đánh dấu Latest khi có đủ cả bốn file (`.github/ci-github-release.sh`). Bản cập nhật tự động
   (`.mar`, `update.xml`) vẫn nằm trên server của Opz.
 - **Actions → Release → Run workflow**: chọn hệ điều hành; mặc định không phát hành, chỉ
   build. Bộ cài nằm ở mục Artifacts của lần chạy, giữ 14 ngày.

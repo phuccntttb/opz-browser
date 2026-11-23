@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Put this job's installer on the GitHub Release of its version, for the
+# Put this job's installers on the GitHub Release of its version, for the
 # website's download links (GitHub's CDN):
 #   https://github.com/<repo>/releases/latest/download/opz-mac.dmg
+#                                                     /opz-win64-setup.exe
 #                                                     /opz-win64.zip
 #                                                     /opz-linux-x86_64.tar.xz
 # Run after scripts/release.sh, when publishing. Updates of installed copies
@@ -9,19 +10,18 @@
 #
 # The release's tag is the bare version ("159.0.1"), not "v159.0.1": v* tags
 # start this workflow, and a release is also made by hand sometimes.
-# The release is marked Latest only once it holds all three installers, so the
+# The release is marked Latest only once it holds all the installers, so the
 # latest/download links never point at a release that lacks one.
 set -euo pipefail
 [ -n "${GITHUB_ACTIONS:-}" ] || { echo "ci-github-release: only for GitHub Actions" >&2; exit 1; }
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 site="$root/dist/release/site"
 repo="$GITHUB_REPOSITORY"
-ALL=(opz-mac.dmg opz-win64.zip opz-linux-x86_64.tar.xz)
+ALL=(opz-mac.dmg opz-win64-setup.exe opz-win64.zip opz-linux-x86_64.tar.xz)
 
 shopt -s nullglob
 links=("$site"/latest/*)
-[ "${#links[@]}" -eq 1 ] || { echo "ci-github-release: expected one installer in $site/latest" >&2; exit 1; }
-stable="$(basename "${links[0]}")"                 # opz-win64.zip
+[ "${#links[@]}" -ge 1 ] || { echo "ci-github-release: no installer in $site/latest" >&2; exit 1; }
 file="$(basename "$(readlink "${links[0]}")")"     # opz-159.0.1-20261123192430.win64.zip
 ver="$(echo "$file" | sed -nE 's/^opz-([0-9][0-9a-z.]*)-[0-9]{14}\..*/\1/p')"
 [ -n "$ver" ] || { echo "ci-github-release: no version in $file" >&2; exit 1; }
@@ -32,7 +32,7 @@ notes="Opz Browser $ver, built on Firefox $ver.
 | | |
 |---|---|
 | macOS (Apple Silicon) | \`opz-mac.dmg\`, signed and notarized by Apple |
-| Windows 10 / 11 (x64) | \`opz-win64.zip\`, extract it into your user folder (e.g. \`%LOCALAPPDATA%\`). Not code-signed yet: SmartScreen asks the first time, choose **More info → Run anyway**. |
+| Windows 10 / 11 (x64) | \`opz-win64-setup.exe\`, the installer (Program Files; updates ask for admin rights), or \`opz-win64.zip\`, extracted into your user folder (e.g. \`%LOCALAPPDATA%\`; updates need no admin rights). Not code-signed yet: SmartScreen asks the first time, choose **More info → Run anyway**. |
 | Linux (x86_64) | \`opz-linux-x86_64.tar.xz\`, extract it anywhere; \`opz/install-desktop.sh\` adds it to the app menu |
 
 Installed copies update themselves."
@@ -46,10 +46,12 @@ fi
 
 up="$RUNNER_TEMP/github-release"
 rm -rf "$up"; mkdir -p "$up"
-cp -L "${links[0]}" "$up/$stable"
-gh release upload "$tag" -R "$repo" --clobber "$up/$stable"
+for l in "${links[@]}"; do cp -L "$l" "$up/$(basename "$l")"; done   # stable names
+gh release upload "$tag" -R "$repo" --clobber "$up"/*
+for l in "${links[@]}"; do
+    echo "ci-github-release: $(basename "$l") ($(basename "$(readlink "$l")")) on release $tag"
+done
 rm -rf "$up"
-echo "ci-github-release: $stable ($file) on release $tag"
 
 have="$(gh release view "$tag" -R "$repo" --json assets -q '.assets[].name')"
 missing=()

@@ -18,6 +18,7 @@
 #     files/opz-<ver>-<buildid>.<BUILD_TARGET>.complete.mar
 #     files/<installer>
 #     latest/opz-mac.dmg | opz-linux-x86_64.tar.xz | opz-win64.zip  -> files/<installer>
+#     latest/opz-win64-setup.exe  (Windows installer, next to the .zip)
 # Each release replaces <BUILD_TARGET>/update.xml; old MARs stay (an update
 # that is downloading keeps working).
 # Windows (MozillaBuild, or cross-built on Linux with OPZ_TARGET=win): a zip,
@@ -235,6 +236,22 @@ with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             p = os.path.join(root, f)
             z.write(p, os.path.relpath(p, base).replace(os.sep, "/"))
 EOF
+    # Installer .exe from the same files, as Firefox's own is made (mach
+    # repackage installer): the NSIS setup.exe that mach package built with
+    # Opz's branding, plus Opz/ as "core", in a 7-Zip SFX stub. Mozilla's stub
+    # shows the Firefox logo, so it gets Opz's icon first. No UPX on the stub:
+    # a packed stub only saves ~100 KB and alarms more virus scanners.
+    setupexe="$objdir/browser/installer/windows/instgen/setup.exe"
+    [ -f "$setupexe" ] || die "$setupexe missing (mach package builds it)"
+    python3 "$OPZ_ROOT/scripts/win-sfx-icon.py" \
+        "$OPZ_ENGINE/other-licenses/7zstub/firefox/7zSD.Win32.sfx" \
+        "$OPZ_ROOT/branding/opz/firefox.ico" "$stage/opz.sfx" || die "could not put Opz's icon into the installer stub"
+    printf ';!@Install@!UTF-8!\nTitle="Opz"\nRunProgram="setup.exe"\n;!@InstallEnd@!\n' > "$stage/app.tag"
+    setup_installer="$name.win64-setup.exe"
+    rm -f "$out/$setup_installer"
+    (cd "$OPZ_ENGINE" && ./mach repackage installer -o "$out/$setup_installer" \
+        --package-name Opz --package "$out/$installer" --tag "$stage/app.tag" \
+        --setupexe "$setupexe" --sfx-stub "$stage/opz.sfx") || die "building the installer failed"
 else
     [ "$OPZ_OS" = linux ] || die "only macOS, Linux and Windows are supported (this is $OPZ_OS)"
     OPZ_POLICIES="$policies" "$OPZ_ROOT/scripts/package.sh"
@@ -313,6 +330,7 @@ else
         || die "signature check of $mar failed"
 fi
 cp "$out/$installer" "$site/files/$installer"
+[ -z "${setup_installer:-}" ] || cp "$out/$setup_installer" "$site/files/$setup_installer"
 # Stable download link for the website (latest/opz-mac.dmg,
 # latest/opz-linux-x86_64.tar.xz, latest/opz-win64.zip): a symlink to this
 # release's installer. (On Windows, ln makes a copy; scripts/publish.sh turns
@@ -324,6 +342,7 @@ case "$OPZ_TARGET" in
     *)   latest="opz-$arch.tar.xz" ;;
 esac
 ln -sfn "../files/$installer" "$site/latest/$latest"
+[ -z "${setup_installer:-}" ] || ln -sfn "../files/$setup_installer" "$site/latest/opz-win64-setup.exe"
 
 size="$(wc -c < "$site/files/$mar" | tr -d ' ')"
 sha512="$(openssl dgst -sha512 -r "$site/files/$mar" | cut -d' ' -f1)"

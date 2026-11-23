@@ -43,7 +43,8 @@ scripts/release.sh --publish
 
 `release.sh` làm các bước sau:
 1. Đóng gói. macOS: `Opz.app` (bundle id `org.opz.browser`) → `.dmg`. Linux: tarball như `package.sh`.
-   Windows: `.win64.zip` chứa thư mục `Opz\` (chưa có bộ cài, chưa ký Authenticode).
+   Windows: `.win64.zip` chứa thư mục `Opz\`, và bộ cài `.win64-setup.exe` dựng từ chính các file đó
+   (NSIS của Firefox, vỏ 7-Zip SFX mang icon Opz qua `scripts/win-sfx-icon.py`). Chưa ký Authenticode.
 2. Đổi policies: bỏ `DisableAppUpdate`, thêm `AppUpdateURL`.
 3. Tạo file cập nhật đầy đủ (`make_full_update.sh`), ký bằng `signmar` (công cụ NSS lấy
    từ chính build), rồi kiểm tra chữ ký bằng chứng chỉ trong `updates/certs/`.
@@ -60,8 +61,8 @@ Bố cục trên server:
 ├── Linux_x86_64-gcc3/update.xml
 ├── WINNT_x86_64-msvc-x64/update.xml       Windows x64
 ├── WINNT_x86_64-msvc-aarch64/update.xml   Windows ARM chạy bản x64 (cùng nội dung)
-├── files/opz-<ver>-<buildid>.<BUILD_TARGET>.complete.mar, bộ cài .dmg / .tar.xz / .win64.zip
-└── latest/opz-mac.dmg, opz-linux-x86_64.tar.xz, opz-win64.zip   (symlink tới bản mới nhất)
+├── files/opz-<ver>-<buildid>.<BUILD_TARGET>.complete.mar, bộ cài .dmg / .tar.xz / .win64.zip / .win64-setup.exe
+└── latest/opz-mac.dmg, opz-linux-x86_64.tar.xz, opz-win64.zip, opz-win64-setup.exe   (symlink tới bản mới nhất)
 ```
 
 Trên Windows, `%BUILD_TARGET%` có thêm đuôi là CPU của máy đang chạy (`-x64`, `-aarch64`).
@@ -88,7 +89,9 @@ Trên Windows, `%BUILD_TARGET%` có thêm đuôi là CPU của máy đang chạy
 - **Windows:** build không kèm Mozilla Maintenance Service, vì dịch vụ này chỉ chạy updater có
   chữ ký của Mozilla (`mozconfig.full`). Giải nén zip vào thư mục user ghi được, vd.
   `%LOCALAPPDATA%\Opz`, thì Opz tự cập nhật mà không cần quyền admin. Đặt trong
-  `Program Files` thì mỗi lần cập nhật đều phải có quyền admin. Bản chưa ký Authenticode, nên
+  `Program Files` thì mỗi lần cập nhật đều phải có quyền admin. Bộ cài `-setup.exe` mặc định cài
+  vào `Program Files\Opz` (xin quyền admin; nếu từ chối thì cho chọn thư mục khác), tạo shortcut
+  và mục gỡ cài đặt trong Settings. Bản chưa ký Authenticode, nên
   lần đầu mở SmartScreen sẽ cảnh báo (**More info → Run anyway**).
 
 [← Mục lục](../README.md)
