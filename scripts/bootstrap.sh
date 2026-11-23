@@ -4,7 +4,7 @@
 #   OPZ_BUILD=full scripts/bootstrap.sh  also the compilers (clang, cbindgen,
 #                                        macOS SDK, ...) and Rust
 # --no-system-changes: mach must not run apt/sudo/brew (it would otherwise try
-# to `sudo apt-get install watchman`). System packages are listed in README.md.
+# to `sudo apt-get install watchman`). System packages are listed in docs/setup.md.
 set -euo pipefail
 . "$(dirname "$0")/../env.sh"
 [ -d "$OPZ_ENGINE" ] || { echo "bootstrap: run scripts/fetch.sh first" >&2; exit 1; }
