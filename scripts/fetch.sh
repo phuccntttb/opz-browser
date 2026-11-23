@@ -54,6 +54,13 @@ fi
 # Local identity for the patch branch commits inside engine/.
 git -C "$OPZ_ENGINE" config user.name  "Opz Browser"
 git -C "$OPZ_ENGINE" config user.email "opz@localhost"
-"$OPZ_ROOT/scripts/verify-engine.sh"
+# Re-hash every file to catch silent disk corruption (a long-lived external
+# drive). OPZ_VERIFY=0 skips it: CI clones onto a fresh disk, and on GitHub's
+# macOS runners it takes over 20 minutes.
+if [ "${OPZ_VERIFY:-1}" = 0 ]; then
+    echo "fetch: verify skipped (OPZ_VERIFY=0)"
+else
+    "$OPZ_ROOT/scripts/verify-engine.sh"
+fi
 echo "fetch: engine at $(git -C "$OPZ_ENGINE" rev-parse HEAD) ($FIREFOX_TAG)"
 opz_guard_check

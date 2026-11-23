@@ -50,6 +50,8 @@ concurrency:
 env:
   # Runners have no separate system disk to protect (env.sh guard).
   OPZ_ROOT_MAX_LOSS_MB: '1000000'
+  # A fresh clone on a fresh disk: skip fetch.sh's re-hash of every file.
+  OPZ_VERIFY: '0'
   # Compiler cache. 3G per job keeps the three jobs inside the repo's 10 GB
   # Actions cache. The server stays up for the whole build, and if it dies
   # anyway the compiler runs without it instead of failing the build.
@@ -208,6 +210,8 @@ jobs:
             hdiutil attach -quiet -nobrowse -mountpoint /Volumes/ffbuild "$RUNNER_TEMP/ffbuild.sparseimage"
           fi
           df -h /Volumes/ffbuild
+          # No Spotlight indexing of the half-million files written there.
+          sudo mdutil -i off /Volumes/ffbuild || true
           mkdir -p /Volumes/ffbuild/opz
           cp -a "$GITHUB_WORKSPACE/." /Volumes/ffbuild/opz/
           # Real rsync: macOS's openrsync cannot talk to rrsync on the server.

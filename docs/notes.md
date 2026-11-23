@@ -3,7 +3,8 @@
 - **Guard dung lượng:** mỗi lần tải/build lớn, script so dung lượng trống của `/`
   trước và sau, và báo lỗi nếu giảm quá 500MB (`OPZ_ROOT_MAX_LOSS_MB`).
 - **`fetch.sh`:** kiểm tra toàn vẹn bằng cách băm lại toàn bộ file (`verify-engine.sh`).
-  Có thể chạy lại lệnh này bất cứ lúc nào nghi ổ đĩa có vấn đề.
+  Có thể chạy lại lệnh này bất cứ lúc nào nghi ổ đĩa có vấn đề. `OPZ_VERIFY=0` bỏ qua
+  bước này (workflow trên GitHub Actions đặt sẵn, vì runner luôn clone mới lên ổ mới).
 - **Policy hệ thống:** Linux đọc `/etc/firefox/policies/policies.json` trước file của Opz,
   vì tên `firefox` được biên dịch sẵn trong binary. Nếu máy có file đó, nó thắng.
 - **Safe Browsing:** build tự dựng không có Google Safe Browsing API key, nên danh sách

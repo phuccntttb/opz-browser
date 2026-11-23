@@ -43,16 +43,16 @@ git checkout -q -B opz "$base"
 
 shopt -s nullglob
 patches=("$OPZ_ROOT"/patches/*.patch)
-n=0
-for p in "${patches[@]}"; do
-    if ! git am -q --3way "$p"; then
-        echo "apply: FAILED on $(basename "$p")." >&2
-        echo "       Fix the conflict in engine/, then: git add <files> && git am --continue" >&2
-        echo "       and re-run scripts/export-patches.sh. Or: git am --abort" >&2
-        exit 1
-    fi
-    n=$((n + 1))
-done
+# One git am for all of them: each separate run re-checks every file in the
+# tree first (about a minute per patch on GitHub's macOS runners).
+if [ "${#patches[@]}" -gt 0 ] && ! git am -q --3way "${patches[@]}"; then
+    failed="$(git am --show-current-patch=raw 2>/dev/null | sed -n 's/^Subject: //p' | head -1)"
+    echo "apply: FAILED after $(git rev-list --count "$base..HEAD") patch(es), on: ${failed:-?}" >&2
+    echo "       Fix the conflict in engine/, then: git add <files> && git am --continue" >&2
+    echo "       and re-run scripts/export-patches.sh. Or: git am --abort" >&2
+    exit 1
+fi
+n="$(git rev-list --count "$base..HEAD")"
 # Overlays: directories that live in this repo are symlinked into engine/
 # (and git-excluded there), so they are never part of the patches and edits
 # in the repo are picked up directly.
