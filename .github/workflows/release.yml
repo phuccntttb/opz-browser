@@ -196,9 +196,18 @@ jobs:
           echo "macOS SDK $(xcrun --show-sdk-version)"
           rm -rf ~/Library/Android
           df -h /
-          # env.sh wants the repo on a volume under /Volumes.
-          hdiutil create -quiet -size 200g -type SPARSE -fs APFS -volname ffbuild "$RUNNER_TEMP/ffbuild"
-          hdiutil attach -quiet -nobrowse -mountpoint /Volumes/ffbuild "$RUNNER_TEMP/ffbuild.sparseimage"
+          # env.sh wants the repo on a volume under /Volumes. A real APFS volume
+          # in the boot disk's container: a sparse disk image was ~140x slower
+          # on many small files (verify-engine.sh: 26 min against 11 s on Linux).
+          container="$(diskutil info -plist / | plutil -extract APFSContainerReference raw -)"
+          if sudo diskutil apfs addVolume "$container" APFS ffbuild -mountpoint /Volumes/ffbuild; then
+            sudo chown "$(id -u):$(id -g)" /Volumes/ffbuild
+          else
+            echo "::warning::could not add an APFS volume; using a (slow) sparse disk image"
+            hdiutil create -quiet -size 200g -type SPARSE -fs APFS -volname ffbuild "$RUNNER_TEMP/ffbuild"
+            hdiutil attach -quiet -nobrowse -mountpoint /Volumes/ffbuild "$RUNNER_TEMP/ffbuild.sparseimage"
+          fi
+          df -h /Volumes/ffbuild
           mkdir -p /Volumes/ffbuild/opz
           cp -a "$GITHUB_WORKSPACE/." /Volumes/ffbuild/opz/
           # Real rsync: macOS's openrsync cannot talk to rrsync on the server.
