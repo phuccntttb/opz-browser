@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 18:15:19 +0700
+Subject: [PATCH] Tabs: a spinner while a new tab loads its first page; a
+ loading address does not open the URL bar card
+
+---
+ .../components/tabbrowser/Tabbrowser.sys.mjs  | 16 +++++++++++
+ .../themes/shared/tabbrowser/content-area.css | 27 +++++++++++++++++++
+ browser/themes/shared/urlbar.css              | 14 +++++-----
+ 3 files changed, 50 insertions(+), 7 deletions(-)
+
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+index 1bb6975ae7..e2103ecd19 100644
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -10641,6 +10641,14 @@ class TabProgressListener {
+           this._tab.setAttribute("busy", "true");
+           this.#tabbrowser._tabAttrModified(this._tab, ["busy"]);
+           this._tab._notselectedsinceload = !this._tab.selected;
++          // Opz: a spinner over a blank page until the new page arrives.
++          if (
++            this.#documentGlobal.isBlankPageURL(
++              this._browser.currentURI?.spec || "about:blank"
++            )
++          ) {
++            this._browser.parentNode.toggleAttribute("opz-loading", true);
++          }
+         }
+ 
+         if (this._tab.selected) {
+@@ -10651,6 +10659,7 @@ class TabProgressListener {
+       // since we (try to) only handle STATE_STOP of the last request,
+       // the count of open requests should now be 0
+       this._requestCount = 0;
++      this._browser.parentNode.removeAttribute("opz-loading");
+ 
+       let modifiedAttrs = [];
+       if (this._tab.hasAttribute("busy")) {
+@@ -10824,6 +10833,13 @@ class TabProgressListener {
+         this.#tabbrowser._tabAttrModified(this._tab, ["busy"]);
+       }
+ 
++      if (
++        !isSameDocument &&
++        !this.#documentGlobal.isBlankPageURL(aLocation.spec)
++      ) {
++        this._browser.parentNode.removeAttribute("opz-loading");
++      }
++
+       if (!isSameDocument) {
+         // If the browser was playing audio, we should remove the playing state.
+         if (this._tab.hasAttribute("soundplaying")) {
+diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
+index 837f602186..925685df80 100644
+--- a/browser/themes/shared/tabbrowser/content-area.css
++++ b/browser/themes/shared/tabbrowser/content-area.css
+@@ -1130,3 +1130,30 @@ split-view-footer {
+ #window-modal-dialog > .dialogOverlay[topmost="true"] {
+   background-color: transparent;
+ }
++
++/* Opz: a spinner over a blank page while a tab loads its first page. */
++.browserStack[opz-loading] {
++  position: relative;
++
++  &::after {
++    content: "";
++    position: absolute;
++    inset: 0;
++    z-index: 1;
++    margin: auto;
++    width: 28px;
++    height: 28px;
++    box-sizing: border-box;
++    border: 3px solid rgb(128 128 128 / 0.25);
++    border-top-color: rgb(128 128 128 / 0.9);
++    border-radius: 50%;
++    pointer-events: none;
++    animation: opz-content-spin 0.8s linear infinite;
++  }
++}
++
++@keyframes opz-content-spin {
++  to {
++    transform: rotate(1turn);
++  }
++}
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 7a2d4c8883..acac5a41ab 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1652,7 +1652,7 @@ toolbar[inactive="true"] .urlbar,
+  * the toolbar, sits in the middle of it and has no background. It grows back to the full width
+  * as soon as it is focused, so typing and the results list keep their room. */
+ /* [context-focus]: focused only by a right click, for the context menu. */
+-#urlbar:not([open], [popover-open], [usertyping], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
++#urlbar:not([open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
+   flex: 0 1 auto;
+   margin-inline: auto;
+ 
+@@ -1721,7 +1721,7 @@ toolbar[inactive="true"] .urlbar,
+  * card, with its results under it, over a dimmed window. Clicks on the dimmed
+  * area go through to what is under it, which blurs the bar and closes it. */
+ :root:not([customizing]) {
+-  #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
++  #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]) {
+     --urlbar-height: 44px;
+     --urlbar-background-overhang-open: 8px;
+     /* These are worked out on :root from the values there, so they are
+@@ -1757,7 +1757,7 @@ toolbar[inactive="true"] .urlbar,
+     }
+   }
+ 
+-  #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) {
++  #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen])) {
+     z-index: 10;
+ 
+     /* The bar's own shadow dims the window, so it paints under the bar and
+@@ -1779,7 +1779,7 @@ toolbar[inactive="true"] .urlbar,
+   display: none;
+ }
+ 
+-:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])) > #opz-urlbar-scrim {
++:root:not([customizing]) #navigator-toolbox:has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen])) > #opz-urlbar-scrim {
+   display: block;
+   position: fixed;
+   inset: 0;
+@@ -1792,7 +1792,7 @@ toolbar[inactive="true"] .urlbar,
+   transition: filter 180ms ease-out;
+ }
+ 
+-:root:not([customizing]):has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
++:root:not([customizing]):has(#urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen])):not(:has(#urlbar[opz-newtab]:not([open], [popover-open]))) #browser {
+   filter: blur(10px);
+ }
+ 
+@@ -1805,7 +1805,7 @@ toolbar[inactive="true"] .urlbar,
+ /* The card, its dimming shadow and its results fade in. While a New Tab waits
+  * for its results the card is hidden and has no animation, which starts when
+  * it is shown. */
+-:root:not([customizing]) #navigator-toolbox #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping], [searchmode], [opz-keepopen]) {
++:root:not([customizing]) #navigator-toolbox #urlbar:is([focused]:not([context-focus]), [open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]) {
+   animation: opz-urlbar-in 180ms ease-out;
+ 
+   @media (prefers-reduced-motion) {
+@@ -1833,7 +1833,7 @@ toolbar[inactive="true"] .urlbar,
+  * information / permissions on the left, page actions on the right) are
+  * invisible until the pointer is over the toolbar. They keep their place, so nothing
+  * shifts when they appear. Once the bar is in use they are always shown. */
+-:root:not([customizing]) #urlbar:not([open], [popover-open], [usertyping], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
++:root:not([customizing]) #urlbar:not([open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
+   & #identity-box,
+   & #page-action-buttons {
+     opacity: 0;

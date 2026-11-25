@@ -1,0 +1,269 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 17:50:03 +0700
+Subject: [PATCH] Menus: no Open in New Window; Open in New Private Tab instead
+
+---
+ browser/base/content/browser-context.js       |  2 +-
+ browser/base/content/nsContextMenu.sys.mjs    | 36 ++++++++++++-------
+ .../components/places/PlacesUIUtils.sys.mjs   | 24 +++++++++++--
+ .../places/content/browserPlacesViews.js      |  1 +
+ .../content/placesContextMenu.inc.xhtml       | 11 ++----
+ .../places/content/placesContextMenu.js       |  3 ++
+ .../components/urlbar/content/UrlbarView.mjs  | 11 +-----
+ .../locales/en-US/browser/opzPrivateTabs.ftl  |  3 ++
+ browser/locales/en-US/browser/places.ftl      |  3 ++
+ browser/themes/shared/browser-shared.css      | 15 ++++++++
+ 10 files changed, 75 insertions(+), 34 deletions(-)
+
+diff --git a/browser/base/content/browser-context.js b/browser/base/content/browser-context.js
+index 2e617f91b9..11f70bca99 100644
+--- a/browser/base/content/browser-context.js
++++ b/browser/base/content/browser-context.js
+@@ -50,7 +50,7 @@ document.addEventListener(
+           gContextMenu.openLinkInSplitView(event);
+           break;
+         case "context-openlinkprivate":
+-          gContextMenu.openLinkInPrivateWindow();
++          gContextMenu.openLinkInNewPrivateTab();
+           break;
+         case "context-openlinksmartwindow":
+           gContextMenu.openLinkInSmartWindow();
+diff --git a/browser/base/content/nsContextMenu.sys.mjs b/browser/base/content/nsContextMenu.sys.mjs
+index ce9e92b961..b1214962d0 100644
+--- a/browser/base/content/nsContextMenu.sys.mjs
++++ b/browser/base/content/nsContextMenu.sys.mjs
+@@ -533,7 +533,10 @@ export class nsContextMenu {
+           this.contentData.userContextId
+         )
+       ) {
+-        document.l10n.setAttributes(item, "opz-private-tab-open-link");
++        document.l10n.setAttributes(
++          item,
++          "opz-private-tab-open-link-in-session"
++        );
+       }
+     }
+ 
+@@ -547,16 +550,15 @@ export class nsContextMenu {
+       "browser.tabs.splitView.enabled"
+     );
+     let currentTabInSplitView = !!window.gBrowser?.selectedTab?.splitview;
+-    let showSmartWindow = lazy.AIWindow.isAIWindowEnabled();
+-    this.showItem("context-openlink", shouldShow && !isWindowPrivate);
+-    this.showItem(
+-      "context-openlinkprivate",
+-      shouldShow && lazy.PrivateBrowsingUtils.enabled
+-    );
+-    this.showItem(
+-      "context-openlinksmartwindow",
+-      shouldShow && showSmartWindow && !isWindowPrivate
+-    );
++    // Opz: no new windows; "context-openlinkprivate" opens a private tab.
++    // Set here: browser/opzPrivateTabs.ftl is added after the window loads.
++    this.showItem("context-openlink", false);
++    document.l10n.setAttributes(
++      document.getElementById("context-openlinkprivate"),
++      "opz-private-tab-open-link"
++    );
++    this.showItem("context-openlinkprivate", shouldShow && !isWindowPrivate);
++    this.showItem("context-openlinksmartwindow", false);
+     this.showItem("context-openlinkintab", shouldShow && !inContainer);
+     this.showItem("context-openlinkincontainertab", shouldShow && inContainer);
+     this.showItem(
+@@ -967,7 +969,7 @@ export class nsContextMenu {
+     // submenu.
+     this.showItem("context-showonlythisframe", !this.inSrcdocFrame);
+     this.showItem("context-openframeintab", !this.inSrcdocFrame);
+-    this.showItem("context-openframe", !this.inSrcdocFrame);
++    this.showItem("context-openframe", false);
+     this.showItem("context-bookmarkframe", !this.inSrcdocFrame);
+     this.showItem("context-printframe", lazy.gPrintEnabled);
+     this.showItem("print-frame-sep", lazy.gPrintEnabled);
+@@ -1596,6 +1598,16 @@ export class nsContextMenu {
+     );
+   }
+ 
++  // Opz: open linked-to URL in a new private tab, a new private session.
++  async openLinkInNewPrivateTab() {
++    // contentData is gone once the menu closes; any other container id drops
++    // the referrer.
++    let { window, linkURL } = this;
++    let params = this._openLinkInParameters({ userContextId: -1 });
++    params.userContextId = await lazy.OpzPrivateTabs.allocate();
++    window.openLinkIn(linkURL, "tab", params);
++  }
++
+   // Open linked-to URL in a new smart window.
+   openLinkInSmartWindow() {
+     const params = this._getGlobalHistoryOptions();
+diff --git a/browser/components/places/PlacesUIUtils.sys.mjs b/browser/components/places/PlacesUIUtils.sys.mjs
+index 16b4b7bf0e..5418223999 100644
+--- a/browser/components/places/PlacesUIUtils.sys.mjs
++++ b/browser/components/places/PlacesUIUtils.sys.mjs
+@@ -20,6 +20,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
+     "moz-src:///browser/components/migration/MigrationUtils.sys.mjs",
+   OpenInTabsUtils:
+     "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
++  OpzPrivateTabs: "resource:///modules/OpzPrivateTabs.sys.mjs",
+   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+@@ -1409,8 +1410,7 @@ export var PlacesUIUtils = {
+       for (let id of [
+         "placesContext_open:newtab",
+         "placesContext_open:newcontainertab",
+-        "placesContext_open:newwindow",
+-        "placesContext_open:newprivatewindow",
++        "placesContext_open:newprivatetab",
+       ]) {
+         let item = document.getElementById(id);
+         item.hidden = this.shouldHideOpenMenuItem(item);
+@@ -1540,6 +1540,26 @@ export var PlacesUIUtils = {
+     );
+   },
+ 
++  /**
++   * Opz: the context menu's node in a new private tab, a new private session.
++   */
++  async openInPrivateTab() {
++    PlacesUIUtils.lastContextMenuCommand = "placesCmd_open:newprivatetab";
++    let triggerNode = this.lastContextMenuTriggerNode;
++    let window = triggerNode.documentGlobal;
++    let link = triggerNode.closest("#managed-bookmarks") && triggerNode.link;
++    let view = this.getViewForNode(triggerNode);
++    let node = view?.selectedNode || triggerNode;
++    let userContextId = await lazy.OpzPrivateTabs.allocate();
++    if (link) {
++      window.openTrustedLinkIn(link, "tab", { userContextId });
++      return;
++    }
++    this._openNodeIn(node, "tab", view?.ownerWindow || window.top, {
++      userContextId,
++    });
++  },
++
+   openSelectionInTabs(event) {
+     let isManaged =
+       !!event.target.parentNode.triggerNode.closest("#managed-bookmarks");
+diff --git a/browser/components/places/content/browserPlacesViews.js b/browser/components/places/content/browserPlacesViews.js
+index 968c6ed81b..b14e3cad67 100644
+--- a/browser/components/places/content/browserPlacesViews.js
++++ b/browser/components/places/content/browserPlacesViews.js
+@@ -2343,6 +2343,7 @@ this.PlacesPanelview = class PlacesPanelview extends PlacesViewBase {
+       // placesCmd_open:newcontainertab is not a placesCommand but it
+       // is set by PlacesUIUtils.openInContainerTab to close the panel.
+       case "placesCmd_open:newcontainertab":
++      case "placesCmd_open:newprivatetab":
+       case "placesCmd_open:tab":
+         if (
+           this._viewElt.id != "PanelUI-bookmarks" ||
+diff --git a/browser/components/places/content/placesContextMenu.inc.xhtml b/browser/components/places/content/placesContextMenu.inc.xhtml
+index dbae902b37..ac23d85c4c 100644
+--- a/browser/components/places/content/placesContextMenu.inc.xhtml
++++ b/browser/components/places/content/placesContextMenu.inc.xhtml
+@@ -43,18 +43,11 @@
+             selection-type="multiple"
+             node-type="link"
+             hide-if-node-type="link_bookmark"/>
+-  <menuitem id="placesContext_open:newwindow"
+-            command="placesCmd_open:window"
+-            data-l10n-id="places-open-in-window"
++  <menuitem id="placesContext_open:newprivatetab"
++            data-l10n-id="places-opz-open-in-private-tab"
+             selection-type="single"
+             node-type="link"
+             hide-if-private-browsing="true"/>
+-  <menuitem id="placesContext_open:newprivatewindow"
+-            command="placesCmd_open:privatewindow"
+-            data-l10n-id="places-open-in-private-window"
+-            selection-type="single"
+-            node-type="link"
+-            hide-if-disabled-private-browsing="true"/>
+   <menuitem id="placesContext_showInFolder"
+             data-l10n-id="places-show-in-folder"
+             command="placesCmd_showInFolder"
+diff --git a/browser/components/places/content/placesContextMenu.js b/browser/components/places/content/placesContextMenu.js
+index b353f722d5..a4cdc10141 100644
+--- a/browser/components/places/content/placesContextMenu.js
++++ b/browser/components/places/content/placesContextMenu.js
+@@ -22,6 +22,9 @@ document.addEventListener(
+         case "placesContext_openLinks:tabs":
+           PlacesUIUtils.openSelectionInTabs(event);
+           break;
++        case "placesContext_open:newprivatetab":
++          PlacesUIUtils.openInPrivateTab();
++          break;
+         case "contentsharing_sharefolder": {
+           PlacesUIUtils.shareBookmarkFolder();
+           break;
+diff --git a/browser/components/urlbar/content/UrlbarView.mjs b/browser/components/urlbar/content/UrlbarView.mjs
+index b6884a52be..88488e6233 100644
+--- a/browser/components/urlbar/content/UrlbarView.mjs
++++ b/browser/components/urlbar/content/UrlbarView.mjs
+@@ -4298,16 +4298,7 @@ export class UrlbarView {
+         l10n: { id: "urlbar-view-context-menu-open-in-container-tab2" },
+       });
+     }
+-    commands.push(
+-      {
+-        openIn: "window",
+-        l10n: { id: "urlbar-view-context-menu-open-in-window2" },
+-      },
+-      {
+-        openIn: "private-window",
+-        l10n: { id: "urlbar-view-context-menu-open-in-private-window2" },
+-      }
+-    );
++    // Opz: no "Open in New Window" / "Open in New Private Window".
+     return commands;
+   }
+ 
+diff --git a/browser/locales/en-US/browser/opzPrivateTabs.ftl b/browser/locales/en-US/browser/opzPrivateTabs.ftl
+index a0b7c26f33..9f015620b1 100644
+--- a/browser/locales/en-US/browser/opzPrivateTabs.ftl
++++ b/browser/locales/en-US/browser/opzPrivateTabs.ftl
+@@ -11,3 +11,6 @@ opz-private-tab-new-in-session =
+ opz-private-tab-open-link =
+     .label = Open Link in New Private Tab
+     .accesskey = w
++opz-private-tab-open-link-in-session =
++    .label = Open Link in New Private Tab in This Session
++    .accesskey = e
+diff --git a/browser/locales/en-US/browser/places.ftl b/browser/locales/en-US/browser/places.ftl
+index a2e67f97c2..c40439082a 100644
+--- a/browser/locales/en-US/browser/places.ftl
++++ b/browser/locales/en-US/browser/places.ftl
+@@ -23,6 +23,9 @@ places-open-in-window =
+ places-open-in-private-window =
+   .label = Open in New Private Window
+   .accesskey = v
++places-opz-open-in-private-tab =
++  .label = Open in New Private Tab
++  .accesskey = v
+ 
+ places-empty-bookmarks-folder =
+   .label = (Empty)
+diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
+index a717b8cc13..babcf5ca67 100644
+--- a/browser/themes/shared/browser-shared.css
++++ b/browser/themes/shared/browser-shared.css
+@@ -1675,3 +1675,18 @@ popupnotificationcontent {
+ #bookmarksToolbarFolderMenu {
+   --menuitem-icon: url("chrome://browser/skin/places/bookmarksToolbar.svg");
+ }
++
++/* Opz: nothing opens in a new window. */
++#sidebar-history-context-open-in-window,
++#sidebar-history-context-open-in-private-window,
++#sidebar-synced-tabs-context-open-in-window,
++#sidebar-synced-tabs-context-open-in-private-window,
++#sidebar-opentabs-context-open-in-window,
++#sidebar-opentabs-context-open-in-private-window,
++#sidebar-opentabs-context-open-in-private-window + menuseparator,
++#sidebar-bookmarks-context-open-in-window,
++#sidebar-bookmarks-context-open-in-private-window,
++#syncedTabsOpenSelectedInWindow,
++#syncedTabsOpenSelectedInPrivateWindow {
++  display: none !important;
++}

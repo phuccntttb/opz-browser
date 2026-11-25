@@ -1,0 +1,174 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 20:20:47 +0700
+Subject: [PATCH] Toolbar: right-click its empty space to keep the hover-only
+ buttons and address bar icons always visible
+
+---
+ browser/base/content/main-popupset.js        | 56 ++++++++++++++++++--
+ browser/locales/en-US/browser/tabbrowser.ftl |  6 +++
+ browser/themes/shared/toolbarbuttons.css     | 27 ++++++++++
+ browser/themes/shared/urlbar.css             | 10 ++--
+ 4 files changed, 92 insertions(+), 7 deletions(-)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index 5a60f8415d..ea31a7ce48 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -652,13 +652,16 @@ document.addEventListener(
+           CreateContainerTabMenu(event);
+           break;
+         case "toolbar-context-menu":
+-          // Opz: no toolbar context menu, except for extension buttons.
+-          if (
++          // Opz: no toolbar context menu, except for extension buttons;
++          // elsewhere it only holds Opz's option for the toolbar buttons.
++          event.target.toggleAttribute(
++            "opz-toolbar-options",
+             !event.target.triggerNode?.closest?.(
+               ".webextension-browser-action, .unified-extensions-item, #unified-extensions-button"
+             )
+-          ) {
+-            event.preventDefault();
++          );
++          if (event.target.hasAttribute("opz-toolbar-options")) {
++            opzUpdateToolbarOptions(event.target);
+             break;
+           }
+           ToolbarContextMenu.onViewToolbarsPopupShowing(
+@@ -779,3 +782,48 @@ document.addEventListener(
+   },
+   { once: true }
+ );
++
++// Opz: whether the toolbar buttons and address bar icons that only show while
++// the pointer is over the toolbar are always visible instead. The pref is
++// mirrored on the root element for the CSS (toolbarbuttons.css).
++const OPZ_ALWAYS_SHOW_PREF = "opz.toolbar.alwaysShowButtons";
++
++function opzSyncAlwaysShowButtons() {
++  document.documentElement.toggleAttribute(
++    "opz-always-show-buttons",
++    Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, false)
++  );
++}
++opzSyncAlwaysShowButtons();
++Services.prefs.addObserver(OPZ_ALWAYS_SHOW_PREF, opzSyncAlwaysShowButtons);
++window.addEventListener(
++  "unload",
++  () =>
++    Services.prefs.removeObserver(
++      OPZ_ALWAYS_SHOW_PREF,
++      opzSyncAlwaysShowButtons
++    ),
++  { once: true }
++);
++
++function opzUpdateToolbarOptions(popup) {
++  let item = popup.querySelector(".opz-toolbar-option");
++  if (!item) {
++    item = document.createXULElement("menuitem");
++    item.className = "opz-toolbar-option";
++    item.setAttribute("type", "checkbox");
++    document.l10n.setAttributes(item, "opz-toolbar-buttons-on-hover");
++    // The opposite of the pref, so that a pref never set keeps the default.
++    item.addEventListener("command", () =>
++      Services.prefs.setBoolPref(
++        OPZ_ALWAYS_SHOW_PREF,
++        !item.hasAttribute("checked")
++      )
++    );
++    popup.append(item);
++  }
++  item.toggleAttribute(
++    "checked",
++    !Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, false)
++  );
++}
+diff --git a/browser/locales/en-US/browser/tabbrowser.ftl b/browser/locales/en-US/browser/tabbrowser.ftl
+index 9b3d5d53e9..734e9b3aca 100644
+--- a/browser/locales/en-US/browser/tabbrowser.ftl
++++ b/browser/locales/en-US/browser/tabbrowser.ftl
+@@ -524,3 +524,9 @@ split-view-menuitem-close-both-tabs =
+ opz-tab-context-turn-off-auto-collapse =
+     .label = Turn off auto-collapse
+     .accesskey = T
++
++## Opz: toolbar context menu, on its empty space
++
++opz-toolbar-buttons-on-hover =
++    .label = Show buttons only on hover
++    .accesskey = h
+diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
+index 9f265e8ce8..fef0efa657 100644
+--- a/browser/themes/shared/toolbarbuttons.css
++++ b/browser/themes/shared/toolbarbuttons.css
+@@ -879,3 +879,30 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+     }
+   }
+ }
++
++/* Opz: the toolbar's right-click menu (main-popupset.js) can keep the buttons
++ * and address bar icons that only show on hover (urlbar.css) always visible. */
++#toolbar-context-menu[opz-toolbar-options] > :not(.opz-toolbar-option),
++#toolbar-context-menu:not([opz-toolbar-options]) > .opz-toolbar-option {
++  display: none;
++}
++
++/* A -moz-pref() media query here did not always follow pref changes. */
++:root[opz-always-show-buttons]:not([customizing]) {
++  #nav-bar {
++    & .webextension-browser-action,
++    & #unified-extensions-button,
++    & #PanelUI-button,
++    & #back-button,
++    & #forward-button,
++    & #stop-reload-button,
++    & .titlebar-buttonbox-container,
++    & #urlbar :is(#trust-icon-container, #identity-box, #page-action-buttons) {
++      opacity: 1;
++    }
++
++    & :is(#back-button, #forward-button, #stop-reload-button)[disabled] {
++      opacity: var(--toolbarbutton-opacity-disabled);
++    }
++  }
++}
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index acac5a41ab..0d848a0845 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1829,11 +1829,13 @@ toolbar[inactive="true"] .urlbar,
+   }
+ }
+ 
+-/* Opz: while the address bar is idle, the icons on its sides (site
+- * information / permissions on the left, page actions on the right) are
++/* Opz: while the address bar is idle, the icons on its sides (the "Not secure"
++ * chip, site information / permissions on the left, page actions such as the
++ * container label and reader view on the right) are
+  * invisible until the pointer is over the toolbar. They keep their place, so nothing
+  * shifts when they appear. Once the bar is in use they are always shown. */
+ :root:not([customizing]) #urlbar:not([open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) {
++  & #trust-icon-container,
+   & #identity-box,
+   & #page-action-buttons {
+     opacity: 0;
+@@ -1841,7 +1843,8 @@ toolbar[inactive="true"] .urlbar,
+   }
+ 
+   &:hover,
+-  &:has(#identity-box[open], #page-action-buttons [open], #page-action-buttons [panelopen]) {
++  &:has(#trust-icon-container[open], #identity-box[open], #page-action-buttons [open], #page-action-buttons [panelopen]) {
++    & #trust-icon-container,
+     & #identity-box,
+     & #page-action-buttons {
+       opacity: 1;
+@@ -1850,6 +1853,7 @@ toolbar[inactive="true"] .urlbar,
+ }
+ 
+ :root:not([customizing]) #nav-bar:hover #urlbar {
++  & #trust-icon-container,
+   & #identity-box,
+   & #page-action-buttons {
+     opacity: 1;

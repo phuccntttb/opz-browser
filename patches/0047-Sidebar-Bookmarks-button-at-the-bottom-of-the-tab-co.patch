@@ -5,20 +5,20 @@ Subject: [PATCH] Sidebar: Bookmarks button at the bottom of the tab column
  opens bookmarks in a popup
 
 ---
- .../components/sidebar/OpzBookmarksPanel.mjs  | 185 ++++++++++++++++++
+ .../components/sidebar/OpzBookmarksPanel.mjs  | 201 ++++++++++++++++++
  browser/components/sidebar/jar.mn             |   1 +
  browser/components/sidebar/sidebar-main.css   |  31 ++-
  browser/components/sidebar/sidebar-main.mjs   |  16 ++
- .../places/BookmarkHTMLUtils.sys.mjs          |  34 +++-
- 5 files changed, 254 insertions(+), 13 deletions(-)
+ .../places/BookmarkHTMLUtils.sys.mjs          |  34 ++-
+ 5 files changed, 270 insertions(+), 13 deletions(-)
  create mode 100644 browser/components/sidebar/OpzBookmarksPanel.mjs
 
 diff --git a/browser/components/sidebar/OpzBookmarksPanel.mjs b/browser/components/sidebar/OpzBookmarksPanel.mjs
 new file mode 100644
-index 0000000000..60688bf977
+index 0000000000..c10c171dd7
 --- /dev/null
 +++ b/browser/components/sidebar/OpzBookmarksPanel.mjs
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,201 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -175,6 +175,22 @@ index 0000000000..60688bf977
 +        closeIfOpened();
 +      }
 +    });
++    // Any "Open…" item of the context menu also closes the panel, after the
++    // item's own handlers have read the selection.
++    // Items with a command attribute dispatch on their <command> instead.
++    pageDoc.addEventListener(
++      "command",
++      e => {
++        let item = e.target;
++        if (
++          /^places(Context|Cmd)_open/.test(item.id) ||
++          item.closest?.("#placesContext_open_newcontainertab_popup")
++        ) {
++          this.win.setTimeout(() => this.panel.hidePopup(), 0);
++        }
++      },
++      true
++    );
 +    this.browser.contentDocument?.getElementById("search-box")?.focus();
 +  }
 +

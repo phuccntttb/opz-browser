@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 19:29:32 +0700
+Subject: [PATCH] Toolbar: put the downloads button back on the toolbar when a
+ profile lost it
+
+---
+ .../customizableui/CustomizableUI.sys.mjs     | 21 +++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
+index 221cb730a0..f316b6a254 100644
+--- a/browser/components/customizableui/CustomizableUI.sys.mjs
++++ b/browser/components/customizableui/CustomizableUI.sys.mjs
+@@ -1119,6 +1119,27 @@ var CustomizableUIInternal = {
+       }
+       Services.prefs.setBoolPref(kPrefOpzNavBarButtonsRemoved, true);
+     }
++
++    // Opz: there is no Customize Toolbar to put the downloads button back, and
++    // without it the downloads panel has nothing to open from.
++    let placements = gSavedState.placements || {};
++    let navbar = placements[CustomizableUI.AREA_NAVBAR];
++    if (
++      Array.isArray(navbar) &&
++      !Object.values(placements).some(
++        ids => Array.isArray(ids) && ids.includes("downloads-button")
++      )
++    ) {
++      let urlbarIndex = navbar.indexOf("urlbar-container");
++      let index = navbar.length;
++      if (urlbarIndex != -1) {
++        index = urlbarIndex + 1;
++        if (navbar[index]?.startsWith("customizableui-special-spring")) {
++          index++;
++        }
++      }
++      navbar.splice(index, 0, "downloads-button");
++    }
+   },
+ 
+   /**

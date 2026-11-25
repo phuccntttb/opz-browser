@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 20:16:27 +0700
+Subject: [PATCH] Linux: Noto Sans for the UI, which has the Vietnamese letters
+ Ubuntu Sans lacks
+
+---
+ toolkit/themes/linux/global/global.css | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/toolkit/themes/linux/global/global.css b/toolkit/themes/linux/global/global.css
+index 70e5eb0df6..d066f808e4 100644
+--- a/toolkit/themes/linux/global/global.css
++++ b/toolkit/themes/linux/global/global.css
+@@ -19,6 +19,23 @@
+   }
+ }
+ 
++/* Opz: Noto Sans for the UI. Ubuntu Sans, Ubuntu's UI font, has no glyphs
++ * for most Vietnamese letters (U+1EA0-1EF9), so they fell back to another
++ * font one by one in the middle of words. The size stays the system one. */
++:root,
++xul|menupopup,
++xul|panel,
++xul|menu,
++xul|menuitem,
++xul|menulist,
++xul|tooltip,
++html|input,
++html|textarea,
++html|button,
++html|select {
++  font-family: "Noto Sans", system-ui, sans-serif !important;
++}
++
+ @media (-moz-menubar-drag) {
+   xul|toolbar[type="menubar"] {
+     -moz-window-dragging: drag;

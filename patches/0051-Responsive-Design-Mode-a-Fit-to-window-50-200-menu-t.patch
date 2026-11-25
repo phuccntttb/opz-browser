@@ -1,0 +1,601 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 18:38:17 +0700
+Subject: [PATCH] Responsive Design Mode: a Fit to window / 50%-200% menu to
+ scale the viewport
+
+---
+ .../locales/en-US/responsive.properties       | 16 ++++
+ devtools/client/responsive/actions/index.js   |  6 ++
+ devtools/client/responsive/actions/ui.js      | 16 ++++
+ devtools/client/responsive/components/App.js  |  9 +++
+ .../client/responsive/components/Toolbar.js   | 17 ++++
+ .../components/ViewportScaleMenu.js           | 81 +++++++++++++++++++
+ .../client/responsive/components/moz.build    |  1 +
+ devtools/client/responsive/index.js           |  9 +++
+ devtools/client/responsive/reducers/ui.js     | 23 ++++++
+ .../client/responsive/responsive-browser.css  | 28 ++++---
+ devtools/client/responsive/ui.js              | 63 ++++++++++++++-
+ 11 files changed, 254 insertions(+), 15 deletions(-)
+ create mode 100644 devtools/client/responsive/components/ViewportScaleMenu.js
+
+diff --git a/devtools/client/locales/en-US/responsive.properties b/devtools/client/locales/en-US/responsive.properties
+index 9c9876fe79..c7052c2659 100644
+--- a/devtools/client/locales/en-US/responsive.properties
++++ b/devtools/client/locales/en-US/responsive.properties
+@@ -175,3 +175,19 @@ responsive.deviceNameAlreadyInUse=Device name already in use
+ # LOCALIZATION NOTE (responsive.deviceFormUpdate): Button text that updates a custom
+ # device when the form is submitted.
+ responsive.deviceFormUpdate=Update
++
++# LOCALIZATION NOTE (responsive.changeViewportScale): Tooltip for the menu
++# that sets how big the viewport is drawn (Opz).
++responsive.changeViewportScale=Change how big the viewport is drawn
++
++# LOCALIZATION NOTE (responsive.viewportScaleFit): Menu item that shrinks the
++# viewport so it fits in the window (Opz).
++responsive.viewportScaleFit=Fit to window
++
++# LOCALIZATION NOTE (responsive.viewportScaleFitLabel): Button label while
++# "Fit to window" is selected. %1$S is the current scale in percent (Opz).
++responsive.viewportScaleFitLabel=Fit to window (%1$S%%)
++
++# LOCALIZATION NOTE (responsive.viewportScaleOption): Menu item / button label
++# for a fixed scale. %1$S is the scale in percent (Opz).
++responsive.viewportScaleOption=%1$S%%
+diff --git a/devtools/client/responsive/actions/index.js b/devtools/client/responsive/actions/index.js
+index 7d42c06053..da8f1aee8c 100644
+--- a/devtools/client/responsive/actions/index.js
++++ b/devtools/client/responsive/actions/index.js
+@@ -104,6 +104,12 @@ createEnum(
+ 
+     // Zoom the viewport.
+     "ZOOM_VIEWPORT",
++
++    // Opz: the scale the viewport is drawn at (0 = fit to window).
++    "CHANGE_VIEWPORT_SCALE",
++
++    // Opz: the scale "fit to window" currently works out to.
++    "CHANGE_FIT_SCALE",
+   ],
+   module.exports
+ );
+diff --git a/devtools/client/responsive/actions/ui.js b/devtools/client/responsive/actions/ui.js
+index b2f05cb7c9..23d714d7b4 100644
+--- a/devtools/client/responsive/actions/ui.js
++++ b/devtools/client/responsive/actions/ui.js
+@@ -6,7 +6,9 @@
+ 
+ const {
+   CHANGE_DISPLAY_PIXEL_RATIO,
++  CHANGE_FIT_SCALE,
+   CHANGE_USER_AGENT,
++  CHANGE_VIEWPORT_SCALE,
+   TOGGLE_LEFT_ALIGNMENT,
+   TOGGLE_RELOAD_ON_TOUCH_SIMULATION,
+   TOGGLE_RELOAD_ON_USER_AGENT,
+@@ -27,6 +29,20 @@ module.exports = {
+     };
+   },
+ 
++  changeFitScale(fitScale) {
++    return {
++      type: CHANGE_FIT_SCALE,
++      fitScale,
++    };
++  },
++
++  changeViewportScale(viewportScale) {
++    return {
++      type: CHANGE_VIEWPORT_SCALE,
++      viewportScale,
++    };
++  },
++
+   changeUserAgent(userAgent) {
+     return {
+       type: CHANGE_USER_AGENT,
+diff --git a/devtools/client/responsive/components/App.js b/devtools/client/responsive/components/App.js
+index 10c31fb723..0d3fce24d0 100644
+--- a/devtools/client/responsive/components/App.js
++++ b/devtools/client/responsive/components/App.js
+@@ -40,6 +40,7 @@ const {
+ } = require("resource://devtools/client/responsive/actions/screenshot.js");
+ const {
+   changeUserAgent,
++  changeViewportScale,
+   toggleLeftAlignment,
+   toggleReloadOnTouchSimulation,
+   toggleReloadOnUserAgent,
+@@ -81,6 +82,7 @@ class App extends PureComponent {
+     this.onChangePixelRatio = this.onChangePixelRatio.bind(this);
+     this.onChangeTouchSimulation = this.onChangeTouchSimulation.bind(this);
+     this.onChangeUserAgent = this.onChangeUserAgent.bind(this);
++    this.onChangeViewportScale = this.onChangeViewportScale.bind(this);
+     this.onChangeViewportOrientation =
+       this.onChangeViewportOrientation.bind(this);
+     this.onDeviceListUpdate = this.onDeviceListUpdate.bind(this);
+@@ -338,6 +340,11 @@ class App extends PureComponent {
+     this.props.dispatch(updateDeviceDisplayed(device, deviceType, displayed));
+   }
+ 
++  onChangeViewportScale(viewportScale) {
++    this.props.dispatch(changeViewportScale(viewportScale));
++    window.postMessage({ type: "change-viewport-scale", viewportScale }, "*");
++  }
++
+   onUpdateDeviceModal(isOpen, modalOpenedFromViewport) {
+     this.props.dispatch(updateDeviceModal(isOpen, modalOpenedFromViewport));
+     window.postMessage({ type: "update-device-modal", isOpen }, "*");
+@@ -353,6 +360,7 @@ class App extends PureComponent {
+       onChangePixelRatio,
+       onChangeTouchSimulation,
+       onChangeUserAgent,
++      onChangeViewportScale,
+       onDeviceListUpdate,
+       onEditCustomDevice,
+       onExit,
+@@ -395,6 +403,7 @@ class App extends PureComponent {
+         onChangePixelRatio,
+         onChangeTouchSimulation,
+         onChangeUserAgent,
++        onChangeViewportScale,
+         onExit,
+         onRemoveDeviceAssociation,
+         doResizeViewport,
+diff --git a/devtools/client/responsive/components/Toolbar.js b/devtools/client/responsive/components/Toolbar.js
+index 74d2d125e0..234c9c2db6 100644
+--- a/devtools/client/responsive/components/Toolbar.js
++++ b/devtools/client/responsive/components/Toolbar.js
+@@ -31,6 +31,9 @@ const SettingsMenu = createFactory(
+ const ViewportDimension = createFactory(
+   require("resource://devtools/client/responsive/components/ViewportDimension.js")
+ );
++const ViewportScaleMenu = createFactory(
++  require("resource://devtools/client/responsive/components/ViewportScaleMenu.js")
++);
+ 
+ loader.lazyGetter(this, "UserAgentInput", function () {
+   return createFactory(
+@@ -48,6 +51,7 @@ class Toolbar extends PureComponent {
+     return {
+       devices: PropTypes.shape(Types.devices).isRequired,
+       displayPixelRatio: PropTypes.number.isRequired,
++      fitScale: PropTypes.number.isRequired,
+       leftAlignmentEnabled: PropTypes.bool.isRequired,
+       networkThrottling: PropTypes.shape(Types.networkThrottling).isRequired,
+       onChangeDevice: PropTypes.func.isRequired,
+@@ -55,6 +59,7 @@ class Toolbar extends PureComponent {
+       onChangePixelRatio: PropTypes.func.isRequired,
+       onChangeTouchSimulation: PropTypes.func.isRequired,
+       onChangeUserAgent: PropTypes.func.isRequired,
++      onChangeViewportScale: PropTypes.func.isRequired,
+       onExit: PropTypes.func.isRequired,
+       onRemoveDeviceAssociation: PropTypes.func.isRequired,
+       doResizeViewport: PropTypes.func.isRequired,
+@@ -71,6 +76,7 @@ class Toolbar extends PureComponent {
+       showUserAgentInput: PropTypes.bool.isRequired,
+       touchSimulationEnabled: PropTypes.bool.isRequired,
+       viewport: PropTypes.shape(Types.viewport).isRequired,
++      viewportScale: PropTypes.number.isRequired,
+     };
+   }
+ 
+@@ -115,12 +121,14 @@ class Toolbar extends PureComponent {
+     const {
+       devices,
+       displayPixelRatio,
++      fitScale,
+       leftAlignmentEnabled,
+       networkThrottling,
+       onChangeDevice,
+       onChangeNetworkThrottling,
+       onChangePixelRatio,
+       onChangeTouchSimulation,
++      onChangeViewportScale,
+       onExit,
+       onRemoveDeviceAssociation,
+       doResizeViewport,
+@@ -137,6 +145,7 @@ class Toolbar extends PureComponent {
+       showUserAgentInput,
+       touchSimulationEnabled,
+       viewport,
++      viewportScale,
+     } = this.props;
+ 
+     return dom.header(
+@@ -173,6 +182,12 @@ class Toolbar extends PureComponent {
+           title: getStr("responsive.rotate"),
+         }),
+         dom.div({ className: "devtools-separator" }),
++        ViewportScaleMenu({
++          fitScale,
++          onChangeViewportScale,
++          viewportScale,
++        }),
++        dom.div({ className: "devtools-separator" }),
+         DevicePixelRatioMenu({
+           devices,
+           displayPixelRatio,
+@@ -231,9 +246,11 @@ class Toolbar extends PureComponent {
+ const mapStateToProps = state => {
+   return {
+     displayPixelRatio: state.ui.displayPixelRatio,
++    fitScale: state.ui.fitScale,
+     leftAlignmentEnabled: state.ui.leftAlignmentEnabled,
+     showUserAgentInput: state.ui.showUserAgentInput,
+     touchSimulationEnabled: state.ui.touchSimulationEnabled,
++    viewportScale: state.ui.viewportScale,
+   };
+ };
+ 
+diff --git a/devtools/client/responsive/components/ViewportScaleMenu.js b/devtools/client/responsive/components/ViewportScaleMenu.js
+new file mode 100644
+index 0000000000..32e652db5d
+--- /dev/null
++++ b/devtools/client/responsive/components/ViewportScaleMenu.js
+@@ -0,0 +1,81 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const {
++  PureComponent,
++} = require("resource://devtools/client/shared/vendor/react.mjs");
++const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
++const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.mjs");
++
++const {
++  getStr,
++  getFormatStr,
++} = require("resource://devtools/client/responsive/utils/l10n.js");
++
++loader.lazyRequireGetter(
++  this,
++  "showMenu",
++  "resource://devtools/client/shared/components/menu/utils.js",
++  true
++);
++
++// 0 means "fit to window".
++const SCALE_PRESET = [0, 50, 75, 100, 125, 150, 200];
++
++class ViewportScaleMenu extends PureComponent {
++  static get propTypes() {
++    return {
++      fitScale: PropTypes.number.isRequired,
++      onChangeViewportScale: PropTypes.func.isRequired,
++      viewportScale: PropTypes.number.isRequired,
++    };
++  }
++
++  constructor(props) {
++    super(props);
++    this.onShowMenu = this.onShowMenu.bind(this);
++  }
++
++  onShowMenu(event) {
++    const { onChangeViewportScale, viewportScale } = this.props;
++
++    const menuItems = SCALE_PRESET.map(value => ({
++      label: value
++        ? getFormatStr("responsive.viewportScaleOption", value)
++        : getStr("responsive.viewportScaleFit"),
++      type: "checkbox",
++      checked: viewportScale === value,
++      click: () => onChangeViewportScale(value),
++    }));
++
++    showMenu(menuItems, {
++      button: event.target,
++    });
++  }
++
++  render() {
++    const { fitScale, viewportScale } = this.props;
++
++    const label = viewportScale
++      ? getFormatStr("responsive.viewportScaleOption", viewportScale)
++      : getFormatStr(
++          "responsive.viewportScaleFitLabel",
++          Math.round(fitScale * 100)
++        );
++
++    return dom.button(
++      {
++        id: "viewport-scale-menu",
++        className: "devtools-button devtools-dropdown-button",
++        title: getStr("responsive.changeViewportScale"),
++        onClick: this.onShowMenu,
++      },
++      dom.span({ className: "title" }, label)
++    );
++  }
++}
++
++module.exports = ViewportScaleMenu;
+diff --git a/devtools/client/responsive/components/moz.build b/devtools/client/responsive/components/moz.build
+index a28ddd3011..36e385c4e4 100644
+--- a/devtools/client/responsive/components/moz.build
++++ b/devtools/client/responsive/components/moz.build
+@@ -15,4 +15,5 @@ DevToolsModules(
+     "Toolbar.js",
+     "UserAgentInput.js",
+     "ViewportDimension.js",
++    "ViewportScaleMenu.js",
+ )
+diff --git a/devtools/client/responsive/index.js b/devtools/client/responsive/index.js
+index 1473dffd62..f1f9394904 100644
+--- a/devtools/client/responsive/index.js
++++ b/devtools/client/responsive/index.js
+@@ -42,6 +42,7 @@ const {
+ } = require("resource://devtools/client/responsive/actions/viewports.js");
+ const {
+   changeDisplayPixelRatio,
++  changeFitScale,
+ } = require("resource://devtools/client/responsive/actions/ui.js");
+ 
+ // Exposed for use by tests
+@@ -227,6 +228,14 @@ window.getViewportBrowser = () => {
+   return browser;
+ };
+ 
++window.setFitScale = fitScale => {
++  try {
++    bootstrap.dispatch(changeFitScale(fitScale));
++  } catch (e) {
++    console.error(e);
++  }
++};
++
+ /**
+  * Called by manager.js to zoom the viewport.
+  */
+diff --git a/devtools/client/responsive/reducers/ui.js b/devtools/client/responsive/reducers/ui.js
+index bf03353bf3..c00fb25acd 100644
+--- a/devtools/client/responsive/reducers/ui.js
++++ b/devtools/client/responsive/reducers/ui.js
+@@ -6,7 +6,9 @@
+ 
+ const {
+   CHANGE_DISPLAY_PIXEL_RATIO,
++  CHANGE_FIT_SCALE,
+   CHANGE_USER_AGENT,
++  CHANGE_VIEWPORT_SCALE,
+   TOGGLE_LEFT_ALIGNMENT,
+   TOGGLE_RELOAD_ON_TOUCH_SIMULATION,
+   TOGGLE_RELOAD_ON_USER_AGENT,
+@@ -21,6 +23,7 @@ const RELOAD_ON_USER_AGENT = "devtools.responsive.reloadConditions.userAgent";
+ const SHOW_USER_AGENT_INPUT = "devtools.responsive.showUserAgentInput";
+ const TOUCH_SIMULATION_ENABLED = "devtools.responsive.touchSimulation.enabled";
+ const USER_AGENT = "devtools.responsive.userAgent";
++const VIEWPORT_SCALE = "devtools.responsive.viewportScale";
+ 
+ const INITIAL_UI = {
+   // The pixel ratio of the display.
+@@ -46,6 +49,10 @@ const INITIAL_UI = {
+   ),
+   // The user agent of the viewport.
+   userAgent: Services.prefs.getCharPref(USER_AGENT, ""),
++  // Opz: the scale the viewport is drawn at, in percent; 0 = fit to window.
++  viewportScale: Services.prefs.getIntPref(VIEWPORT_SCALE, 0),
++  // Opz: the scale "fit to window" currently works out to (0..1).
++  fitScale: 1,
+ };
+ 
+ const reducers = {
+@@ -56,6 +63,22 @@ const reducers = {
+     };
+   },
+ 
++  [CHANGE_FIT_SCALE](ui, { fitScale }) {
++    return {
++      ...ui,
++      fitScale,
++    };
++  },
++
++  [CHANGE_VIEWPORT_SCALE](ui, { viewportScale }) {
++    Services.prefs.setIntPref(VIEWPORT_SCALE, viewportScale);
++
++    return {
++      ...ui,
++      viewportScale,
++    };
++  },
++
+   [CHANGE_USER_AGENT](ui, { userAgent }) {
+     Services.prefs.setCharPref(USER_AGENT, userAgent);
+ 
+diff --git a/devtools/client/responsive/responsive-browser.css b/devtools/client/responsive/responsive-browser.css
+index 8c9902d85d..e35eb95f36 100644
+--- a/devtools/client/responsive/responsive-browser.css
++++ b/devtools/client/responsive/responsive-browser.css
+@@ -50,16 +50,16 @@
+   contain: size;
+ 
+   /**
+-   * The grid areas provide a reference box for the browser. The browser
+-   * (and the .rdm-screen-box element) will fill the grid box exactly at
+-   * rdm-zoom 1. If rdm-zoom is different from 1, the grid areas do not
+-   * change; instead, we use a transform on the browser and on the
+-   * .rdm-screen-box to make it grow beyond the grid area.
++   * The grid areas are the size the browser (and the .rdm-screen-box) is
++   * drawn at: --rdm-width/--rdm-height times rdm-zoom. The elements keep
++   * their unzoomed size, a transform scales them to fill the grid area and
++   * margins make their margin box (which is what the grid counts for
++   * scrolling) match it.
+    * Resizer handles etc are children of .rdm-screen-box, so they will be
+    * placed correctly as a result of .rdm-screen-box's transform.
+    */
+-  grid-template-columns: 15px 1fr [center-align] var(--rdm-width) 1fr;
+-  grid-template-rows: 10px [margin-top-offset] var(--rdm-height) [below-browser] 1fr;
++  grid-template-columns: 15px 1fr [center-align] calc(var(--rdm-width) * var(--rdm-zoom, 1)) 1fr;
++  grid-template-rows: 10px [margin-top-offset] calc(var(--rdm-height) * var(--rdm-zoom, 1)) [below-browser] 1fr;
+ }
+ 
+ .browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-screen-box) {
+@@ -72,15 +72,19 @@
+ }
+ 
+ .browserContainer.responsive-mode.left-aligned > .browserStack {
+-  grid-template-columns: 15px [left-align] var(--rdm-width) 1fr;
++  grid-template-columns: 15px [left-align] calc(var(--rdm-width) * var(--rdm-zoom, 1)) 1fr;
+ }
+ 
+ html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
+-  grid-template-columns: 1fr [left-align] var(--rdm-width) 15px;
++  grid-template-columns: 1fr [left-align] calc(var(--rdm-width) * var(--rdm-zoom, 1)) 15px;
+ }
+ 
+ .browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-screen-box) {
+-  transform-origin: 50% 0;
++  justify-self: start;
++  align-self: start;
++  margin-inline-end: calc(var(--rdm-width) * (var(--rdm-zoom, 1) - 1));
++  margin-bottom: calc(var(--rdm-height) * (var(--rdm-zoom, 1) - 1));
++  transform-origin: 0 0;
+   transform: scale(var(--rdm-zoom), var(--rdm-zoom));
+   box-sizing: content-box; /* This is important to ensure that the pane has the
+                               precise number of pixels defined by --rdm-width
+@@ -89,8 +93,8 @@ html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
+   width: var(--rdm-width);
+ }
+ 
+-.browserContainer.responsive-mode.left-aligned > .browserStack > :is(browser, .rdm-screen-box) {
+-  transform-origin: 0 0;
++html[dir="rtl"] .browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-screen-box) {
++  transform-origin: 100% 0;
+ }
+ 
+ .browserContainer.responsive-mode > .browserStack > browser {
+diff --git a/devtools/client/responsive/ui.js b/devtools/client/responsive/ui.js
+index 5ed6622602..349237bc47 100644
+--- a/devtools/client/responsive/ui.js
++++ b/devtools/client/responsive/ui.js
+@@ -55,6 +55,7 @@ loader.lazyRequireGetter(
+ const RELOAD_CONDITION_PREF_PREFIX = "devtools.responsive.reloadConditions.";
+ const RELOAD_NOTIFICATION_PREF =
+   "devtools.responsive.reloadNotification.enabled";
++const VIEWPORT_SCALE_PREF = "devtools.responsive.viewportScale";
+ const USE_DYNAMIC_TOOLBAR_PREF = "devtools.responsive.dynamicToolbar.enabled";
+ const DYNAMIC_TOOLBAR_PREF_ON_TOP_PREF =
+   "devtools.responsive.dynamicToolbar.onTop";
+@@ -124,6 +125,13 @@ class ResponsiveUI extends EventEmitter {
+     this.currentDynamicToolbarHeight = 0;
+     this.dynamicToolbarSnapAnimation = null;
+     this.mouseScreenYWhilePressed = null;
++
++    // Percent the viewport is drawn at, 0 meaning "fit to window".
++    this.viewportScale = Services.prefs.getIntPref(VIEWPORT_SCALE_PREF, 0);
++    this.fitScale = 1;
++    this.viewportWidth = 0;
++    this.viewportHeight = 0;
++    this.stackResizeObserver = null;
+   }
+ 
+   #reloadNotificationMessageElement;
+@@ -284,6 +292,13 @@ class ResponsiveUI extends EventEmitter {
+     // Put .rdm-screen-box inside the browser stack, as a sibling to the browser.
+     this.browserStackEl.append(this.screenBox);
+ 
++    this.stackResizeObserver = new this.browserWindow.ResizeObserver(() => {
++      if (!this.viewportScale) {
++        this.updateViewportScale();
++      }
++    });
++    this.stackResizeObserver.observe(this.browserStackEl);
++
+     this.screenBox.append(
+       this.dynamicToolbar,
+       this.browserBottomCover,
+@@ -404,6 +419,8 @@ class ResponsiveUI extends EventEmitter {
+     this.browserStackEl.style.removeProperty("--rdm-width");
+     this.browserStackEl.style.removeProperty("--rdm-height");
+     this.browserStackEl.style.removeProperty("--rdm-zoom");
++    this.stackResizeObserver?.disconnect();
++    this.stackResizeObserver = null;
+ 
+     // Remove any .style.top remnants (set by setCurrentDynamicToolbarHeight).
+     this.tab.linkedBrowser.style.removeProperty("top");
+@@ -589,6 +606,10 @@ class ResponsiveUI extends EventEmitter {
+       case "change-user-agent":
+         this.onChangeUserAgent(event);
+         break;
++      case "change-viewport-scale":
++        this.viewportScale = event.data.viewportScale;
++        this.updateViewportScale();
++        break;
+       case "exit":
+         this.onExit();
+         break;
+@@ -769,7 +790,7 @@ class ResponsiveUI extends EventEmitter {
+       return;
+     }
+ 
+-    const zoom = this.tab.linkedBrowser.fullZoom;
++    const zoom = this.tab.linkedBrowser.fullZoom * this.getViewportScale();
+ 
+     let deltaX = (screenX - this.lastScreenX) / zoom;
+     let deltaY = (screenY - this.lastScreenY) / zoom;
+@@ -1153,13 +1174,14 @@ class ResponsiveUI extends EventEmitter {
+    *        The viewport's height.
+    */
+   updateViewportSize(width, height) {
+-    const zoom = this.tab.linkedBrowser.fullZoom;
++    this.viewportWidth = width;
++    this.viewportHeight = height;
+ 
+     // Setting this with a variable on the stack instead of directly as width/height
+     // on the <browser> because we'll need to use this for the alert dialog as well.
+     this.browserStackEl.style.setProperty("--rdm-width", `${width}px`);
+     this.browserStackEl.style.setProperty("--rdm-height", `${height}px`);
+-    this.browserStackEl.style.setProperty("--rdm-zoom", zoom);
++    this.updateViewportScale();
+ 
+     // This is a bit premature, but we emit a content-resize event here. It
+     // would be preferrable to wait until the viewport is actually resized,
+@@ -1173,6 +1195,41 @@ class ResponsiveUI extends EventEmitter {
+     });
+   }
+ 
++  getViewportScale() {
++    return this.viewportScale ? this.viewportScale / 100 : this.fitScale;
++  }
++
++  /**
++   * Sets --rdm-zoom, how big the viewport is drawn: the tab's own zoom times
++   * the scale picked in the toolbar (or the one that fits the window).
++   */
++  updateViewportScale() {
++    if (!this.browserStackEl) {
++      return;
++    }
++    const zoom = this.tab.linkedBrowser.fullZoom;
++    if (!this.viewportScale) {
++      const { clientWidth, clientHeight } = this.browserStackEl;
++      const width = this.viewportWidth * zoom;
++      const height = this.viewportHeight * zoom;
++      let fit = 1;
++      if (width > 0 && height > 0 && clientWidth > 0 && clientHeight > 0) {
++        fit = Math.min(
++          1,
++          (clientWidth - 30) / width,
++          (clientHeight - 20) / height
++        );
++        fit = Math.max(0.1, Math.floor(fit * 100) / 100);
++      }
++      this.fitScale = fit;
++      this.rdmFrame?.contentWindow?.setFitScale?.(fit * zoom);
++    }
++    this.browserStackEl.style.setProperty(
++      "--rdm-zoom",
++      zoom * this.getViewportScale()
++    );
++  }
++
+   /**
+    * Helper for tests. Assumes a single viewport for now.
+    */

@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 19:00:15 +0700
+Subject: [PATCH] Tabs: Turn off auto-collapse checkbox in the tab context menu
+
+---
+ .../tabbrowser/content/tab-context-menu.js    | 23 +++++++++++++++++++
+ browser/locales/en-US/browser/tabbrowser.ftl  |  6 +++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index d096ae7acc..d339cee131 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -1377,6 +1377,29 @@ var TabContextMenu = {
+       "checked",
+       Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
+     );
++
++    // Opz: the same switch as the pin button at the bottom of the column.
++    let autoCollapseItem = document.getElementById(
++      "opz_context_noAutoCollapse"
++    );
++    if (!autoCollapseItem) {
++      autoCollapseItem = document.createXULElement("menuitem");
++      autoCollapseItem.id = "opz_context_noAutoCollapse";
++      autoCollapseItem.setAttribute("type", "checkbox");
++      document.l10n.setAttributes(
++        autoCollapseItem,
++        "opz-tab-context-turn-off-auto-collapse"
++      );
++      autoCollapseItem.addEventListener("command", () =>
++        document.querySelector("sidebar-main")?.opzToggleAutoCollapse()
++      );
++      item.after(autoCollapseItem);
++    }
++    autoCollapseItem.hidden = item.hidden;
++    autoCollapseItem.toggleAttribute(
++      "checked",
++      SidebarController.sidebarRevampVisibility != "expand-on-hover"
++    );
+   },
+ 
+   // Opz: a new tab in a container, like the New Tab button's popup.
+diff --git a/browser/locales/en-US/browser/tabbrowser.ftl b/browser/locales/en-US/browser/tabbrowser.ftl
+index 4f28e62c7b..9b3d5d53e9 100644
+--- a/browser/locales/en-US/browser/tabbrowser.ftl
++++ b/browser/locales/en-US/browser/tabbrowser.ftl
+@@ -518,3 +518,9 @@ split-view-menuitem-close-both-tabs =
+     .label = Close Both Tabs
+ 
+ ##
++
++## Opz: tab context menu
++
++opz-tab-context-turn-off-auto-collapse =
++    .label = Turn off auto-collapse
++    .accesskey = T
