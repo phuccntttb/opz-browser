@@ -14,7 +14,8 @@ Chạy sau mỗi lần build lớn hoặc nâng cấp Firefox:
 - [ ] **New Tab:** không có Stories hay ô tài trợ.
 - [ ] **Settings:**
   - không có More from Mozilla, Labs
-  - Account báo không khả dụng
+  - Account and sync đăng nhập được
+  - không có dòng "Your browser is being managed by your organization"
 - [ ] **Sidebar:** không có chatbot AI.
 - [ ] **Menu Help:** không có "Share ideas and feedback", "Switch to a new device".
 - [ ] **Firefox View:** không có nút ở thanh tab, không có trong Customize và menu Tools.

@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 22:18:37 +0700
+Subject: [PATCH] Settings: no "managed by your organization" notice for Opz's
+ own policies
+
+---
+ browser/components/preferences/preferences.js | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/browser/components/preferences/preferences.js b/browser/components/preferences/preferences.js
+index 8b3acf475a..ae1a9e4827 100644
+--- a/browser/components/preferences/preferences.js
++++ b/browser/components/preferences/preferences.js
+@@ -1171,13 +1171,11 @@ function appendSearchKeywords(aId, keywords) {
+   element.setAttribute("searchkeywords", keywords.join(" "));
+ }
+ 
+-function maybeDisplayPoliciesNotice() {
+-  if (Services.policies.status == Services.policies.ACTIVE) {
+-    document
+-      .getElementById("policies-container-content")
+-      .removeAttribute("hidden");
+-  }
+-}
++// Opz: no "Your browser is being managed by your organization" notice. Opz
++// ships its own distribution/policies.json (telemetry, updates...), so the
++// notice would always show although no organization manages the browser.
++// about:policies still lists the active policies.
++function maybeDisplayPoliciesNotice() {}
+ 
+ function maybeDisplayTLSKeyLoggingNotice() {
+   if (Services.env.exists("SSLKEYLOGFILE")) {

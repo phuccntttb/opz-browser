@@ -7,9 +7,9 @@ Subject: [PATCH] Toolbar: right-click its empty space to keep the hover-only
 ---
  browser/base/content/main-popupset.js        | 56 ++++++++++++++++++--
  browser/locales/en-US/browser/tabbrowser.ftl |  6 +++
- browser/themes/shared/toolbarbuttons.css     | 27 ++++++++++
+ browser/themes/shared/toolbarbuttons.css     | 45 +++++++++++++---
  browser/themes/shared/urlbar.css             | 10 ++--
- 4 files changed, 92 insertions(+), 7 deletions(-)
+ 4 files changed, 104 insertions(+), 13 deletions(-)
 
 diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
 index 5a60f8415d..ea31a7ce48 100644
@@ -100,10 +100,43 @@ index 9b3d5d53e9..734e9b3aca 100644
 +    .label = Show buttons only on hover
 +    .accesskey = h
 diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
-index 9f265e8ce8..fef0efa657 100644
+index 9f265e8ce8..99e3828127 100644
 --- a/browser/themes/shared/toolbarbuttons.css
 +++ b/browser/themes/shared/toolbarbuttons.css
-@@ -879,3 +879,30 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+@@ -829,14 +829,16 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+   }
+ }
+ 
+-/* Opz: the extension buttons and the app menu button on the right of the
+- * toolbar are invisible until the pointer is over the toolbar (or one of them
+- * has keyboard focus or an open panel). They keep their place, so nothing
+- * shifts when they appear. */
++/* Opz: every button on the toolbar but the address bar (extensions, app
++ * menu, downloads, overflow, private browsing...) is invisible until the
++ * pointer is over the toolbar (or one of them has keyboard focus or an open
++ * panel). They keep their place, so nothing shifts when they appear. */
+ :root:not([customizing]) #nav-bar {
+   & .webextension-browser-action,
+   & #unified-extensions-button,
+-  & #PanelUI-button {
++  & #PanelUI-button,
++  & #nav-bar-customization-target > :where(:not(#urlbar-container)),
++  & > :where(:not(#nav-bar-customization-target)) {
+     opacity: 0;
+     transition: opacity 150ms ease;
+   }
+@@ -846,7 +848,9 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+   &:has(toolbarbutton[open], toolbarbutton[checked]) {
+     & .webextension-browser-action,
+     & #unified-extensions-button,
+-    & #PanelUI-button {
++    & #PanelUI-button,
++    & #nav-bar-customization-target > :where(:not(#urlbar-container)),
++    & > :where(:not(#nav-bar-customization-target)) {
+       opacity: 1;
+     }
+   }
+@@ -879,3 +883,32 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
      }
    }
  }
@@ -125,6 +158,8 @@ index 9f265e8ce8..fef0efa657 100644
 +    & #forward-button,
 +    & #stop-reload-button,
 +    & .titlebar-buttonbox-container,
++    & #nav-bar-customization-target > :where(:not(#urlbar-container)),
++    & > :where(:not(#nav-bar-customization-target)),
 +    & #urlbar :is(#trust-icon-container, #identity-box, #page-action-buttons) {
 +      opacity: 1;
 +    }

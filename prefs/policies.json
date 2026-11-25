@@ -5,7 +5,6 @@
     "DisableRemoteImprovements": true,
     "DisableAppUpdate": true,
     "DisableSystemAddonUpdate": true,
-    "DisableAccounts": true,
     "DisableFeedbackCommands": true,
     "IPProtectionAvailable": false,
     "SkipTermsOfUse": true,

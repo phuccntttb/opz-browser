@@ -8,7 +8,6 @@ Phần lớn nằm trong `prefs/`; chỉ những chỗ không có pref/policy n�
     - telemetry (`DisableTelemetry`)
     - studies/Normandy/Nimbus (`DisableFirefoxStudies`, `DisableRemoteImprovements`)
     - cập nhật (`DisableAppUpdate`, `DisableSystemAddonUpdate`)
-    - tài khoản/Sync (`DisableAccounts`)
     - lệnh gửi feedback cho Mozilla (`DisableFeedbackCommands`)
     - VPN (`IPProtectionAvailable`)
     - Terms of Use, trang first-run/post-update
@@ -128,8 +127,11 @@ Opz không tự viết bộ chặn riêng (giống Zen):
   gợi ý tài trợ, ô "Support Firefox" (tài trợ) trong Settings → Home, quảng cáo app di động/VPN
   trong trang báo cáo bảo vệ.
 
-Vì có policy nên Settings hiện dòng *"Your browser is being managed by your organization"*;
-xem chi tiết ở `about:policies`.
+Tài khoản Mozilla và Sync **không bị tắt**: đăng nhập trong Settings → Account and sync như Firefox.
+Tab riêng tư không được đồng bộ (`0035`); Firefox Relay vẫn tắt trong `opz.js`.
+
+Firefox hiện dòng *"Your browser is being managed by your organization"* trong Settings mỗi khi có
+policy, kể cả policy của chính Opz; patch `0057` bỏ dòng đó. Policy đang chạy vẫn xem ở `about:policies`.
 
 **Giữ lại:** Remote Settings (blocklist bảo mật, thu hồi chứng chỉ, model dịch),
 kiểm tra captive portal, Web Push, tải GMP (Widevine/OpenH264), blocklist add-on và

@@ -36,7 +36,7 @@ pref("datareporting.usage.uploadEnabled", false);
 // --- Sponsored tiles fetch (FirefoxHome hides them; this stops the request) ---
 pref("browser.topsites.contile.enabled", false);
 
-// --- Firefox Relay (needs a Mozilla account, which is disabled) ---------------
+// --- Firefox Relay (off; Sync is on but Relay is not wanted) -----------------
 pref("signon.firefoxRelay.feature", "disabled");
 pref("browser.promo.relay.enabled", false);
 
