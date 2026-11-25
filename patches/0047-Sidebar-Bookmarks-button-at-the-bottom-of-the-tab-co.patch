@@ -1,0 +1,243 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 14:05:54 +0700
+Subject: [PATCH] Sidebar: Bookmarks button at the bottom of the tab column
+ opens bookmarks in a popup
+
+---
+ .../components/sidebar/OpzBookmarksPanel.mjs  | 114 ++++++++++++++++++
+ browser/components/sidebar/jar.mn             |   1 +
+ browser/components/sidebar/sidebar-main.css   |  31 +++--
+ browser/components/sidebar/sidebar-main.mjs   |  16 +++
+ 4 files changed, 154 insertions(+), 8 deletions(-)
+ create mode 100644 browser/components/sidebar/OpzBookmarksPanel.mjs
+
+diff --git a/browser/components/sidebar/OpzBookmarksPanel.mjs b/browser/components/sidebar/OpzBookmarksPanel.mjs
+new file mode 100644
+index 0000000000..9f7c9e381b
+--- /dev/null
++++ b/browser/components/sidebar/OpzBookmarksPanel.mjs
+@@ -0,0 +1,114 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++const lazy = {};
++ChromeUtils.defineESModuleGetters(lazy, {
++  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
++});
++
++const PANEL_ID = "opz-bookmarks-panel";
++const PAGE = "chrome://browser/content/places/bookmarksSidebar.xhtml";
++
++/**
++ * Opz: the bookmarks sidebar page (search box and bookmark tree) in a panel
++ * anchored to the Bookmarks button at the bottom of the vertical tab column.
++ */
++export class OpzBookmarksPanel {
++  /**
++   * @param {Window} win
++   * @param {Element} button
++   *   Gets aria-expanded while the panel is open.
++   * @param {Element} anchor
++   *   The panel opens at its end edge, bottoms aligned.
++   */
++  static toggle(win, button, anchor) {
++    let panel = win.document.getElementById(PANEL_ID);
++    if (panel && (panel.state == "open" || panel.state == "showing")) {
++      panel.hidePopup();
++      return;
++    }
++    win.opzBookmarksPanel ??= new OpzBookmarksPanel(win);
++    win.opzBookmarksPanel.open(button, anchor);
++  }
++
++  constructor(win) {
++    this.win = win;
++    let doc = win.document;
++
++    this.panel = doc.createXULElement("panel");
++    this.panel.id = PANEL_ID;
++    this.panel.className = "panel-no-padding";
++    this.panel.setAttribute("type", "arrow");
++    this.panel.setAttribute("orient", "vertical");
++    this.panel.setAttribute("role", "dialog");
++    this.panel.style.setProperty("--arrowpanel-padding", "0");
++
++    this.browser = doc.createXULElement("browser");
++    this.browser.setAttribute("disablehistory", "true");
++    this.browser.setAttribute("disablefullscreen", "true");
++    this.browser.setAttribute("autoscroll", "false");
++    this.browser.setAttribute("tooltip", "aHTMLTooltip");
++    this.browser.style.width = "22em";
++    this.browser.style.height = "min(32em, 70vh)";
++    this.browser.setAttribute("src", PAGE);
++    this.panel.append(this.browser);
++    doc.getElementById("mainPopupSet").append(this.panel);
++
++    this.browser.addEventListener(
++      "load",
++      e => {
++        if (e.target.documentURI == PAGE) {
++          this.onPageLoad(e.target);
++        }
++      },
++      true
++    );
++
++    this.panel.addEventListener("popupshown", e => {
++      if (e.target == this.panel) {
++        this.browser.contentDocument?.getElementById("search-box")?.focus();
++      }
++    });
++    this.panel.addEventListener("popuphidden", e => {
++      if (e.target == this.panel) {
++        this.button?.removeAttribute("aria-expanded");
++      }
++    });
++  }
++
++  onPageLoad(pageDoc) {
++    pageDoc.getElementById("sidebar-panel-header").hidden = true;
++    pageDoc.getElementById("sidebar-search-container").style.paddingTop =
++      "var(--space-medium)";
++
++    let tree = pageDoc.getElementById("bookmarks-view");
++    let closeIfOpened = () => {
++      let node = tree.selectedNode;
++      if (node && lazy.PlacesUtils.nodeIsURI(node)) {
++        this.win.setTimeout(() => this.panel.hidePopup(), 0);
++      }
++    };
++    tree.addEventListener("click", e => {
++      if (
++        e.button < 2 &&
++        e.originalTarget.localName == "treechildren" &&
++        tree.getRowAt(e.clientX, e.clientY) >= 0
++      ) {
++        closeIfOpened();
++      }
++    });
++    tree.addEventListener("keypress", e => {
++      if (e.key == "Enter") {
++        closeIfOpened();
++      }
++    });
++    this.browser.contentDocument?.getElementById("search-box")?.focus();
++  }
++
++  open(button, anchor) {
++    this.button = button;
++    button.setAttribute("aria-expanded", "true");
++    this.panel.openPopup(anchor, "end_after");
++  }
++}
+diff --git a/browser/components/sidebar/jar.mn b/browser/components/sidebar/jar.mn
+index 04c93721d7..4313fae65a 100644
+--- a/browser/components/sidebar/jar.mn
++++ b/browser/components/sidebar/jar.mn
+@@ -4,6 +4,7 @@
+ 
+ browser.jar:
+     content/browser/sidebar/browser-sidebar.js
++    content/browser/sidebar/OpzBookmarksPanel.mjs
+     content/browser/sidebar/sidebar-bookmark-list.css
+     content/browser/sidebar/sidebar-bookmark-list.mjs
+     content/browser/sidebar/sidebar-bookmarks.html
+diff --git a/browser/components/sidebar/sidebar-main.css b/browser/components/sidebar/sidebar-main.css
+index 985e1206cf..0c936ead84 100644
+--- a/browser/components/sidebar/sidebar-main.css
++++ b/browser/components/sidebar/sidebar-main.css
+@@ -234,22 +234,32 @@
+ 
+ /* Opz: a pin button at the bottom of the expanded tab column that turns the
+  * auto-collapse (expand on hover) off and on. Only shown while expanded, and only visible while the pointer is over the column. */
+-.opz-auto-collapse-button {
++.opz-auto-collapse-button,
++.opz-containers-button {
+   display: none;
+ }
+ 
+-/* Opz: the Containers button sits left of the pin button and looks the same. */
++/* Opz: the Containers button sits left of the pin button and looks the same.
++ * The Bookmarks button is at the start of the row and always visible, also
++ * while the column is collapsed. */
+ .opz-bottom-buttons {
+-  display: none;
+-}
+-
+-:host([expanded]) .opz-bottom-buttons {
+   display: flex;
+   flex: none;
++  justify-content: center;
+   gap: 4px;
+-  margin: auto 8px 8px auto;
++  margin: auto 0 8px;
++}
++
++:host([expanded]) .opz-bottom-buttons {
++  justify-content: flex-end;
++  margin-inline: 8px;
++}
++
++:host([expanded]) .opz-bookmarks-button {
++  margin-inline-end: auto;
+ }
+ 
++.opz-bookmarks-button,
+ :host([expanded]) :is(.opz-auto-collapse-button, .opz-containers-button) {
+   display: block;
+   flex: none;
+@@ -273,7 +283,8 @@
+ 
+   :host(:hover) &,
+   &:focus-visible,
+-  &[aria-expanded="true"] {
++  &[aria-expanded="true"],
++  &.opz-bookmarks-button {
+     opacity: 1;
+   }
+ 
+@@ -290,3 +301,7 @@
+ :host([expanded]) .opz-containers-button {
+   background-image: url("resource://usercontext-content/fence.svg");
+ }
++
++.opz-bookmarks-button {
++  background-image: url("chrome://browser/skin/bookmark-hollow.svg");
++}
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index e217d23601..f0970dbdc2 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -1018,7 +1018,16 @@ export default class SidebarMain extends MozLitElement {
+             const containersLabel = this.fluentStrings
+               .formatMessagesSync(["user-context-manage-containers2"])?.[0]
+               ?.attributes?.find(attr => attr.name === "label")?.value;
++            const bookmarksLabel = this.fluentStrings
++              .formatMessagesSync(["sidebar-menu-bookmarks-label"])?.[0]
++              ?.attributes?.find(attr => attr.name === "label")?.value;
+             return html`<div class="opz-bottom-buttons">
++              <button
++                class="opz-bookmarks-button"
++                title=${bookmarksLabel}
++                aria-label=${bookmarksLabel}
++                @click=${this.opzOpenBookmarks}
++              ></button>
+               <button
+                 class="opz-containers-button"
+                 title=${containersLabel}
+@@ -1039,6 +1048,13 @@ export default class SidebarMain extends MozLitElement {
+     `;
+   }
+ 
++  opzOpenBookmarks(event) {
++    const { OpzBookmarksPanel } = ChromeUtils.importESModule(
++      "chrome://browser/content/sidebar/OpzBookmarksPanel.mjs"
++    );
++    OpzBookmarksPanel.toggle(window, event.currentTarget, this);
++  }
++
+   opzOpenContainers(event) {
+     const { OpzContainersPanel } = ChromeUtils.importESModule(
+       "chrome://browser/content/usercontext/OpzContainersPanel.mjs"
