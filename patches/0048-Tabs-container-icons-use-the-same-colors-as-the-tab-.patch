@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Wed, 25 Nov 2026 16:14:59 +0700
+Subject: [PATCH] Tabs: container icons use the same colors as the tab preview
+ and the URL bar
+
+---
+ browser/themes/shared/tabbrowser/tabs.css | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/browser/themes/shared/tabbrowser/tabs.css b/browser/themes/shared/tabbrowser/tabs.css
+index 19cb894829..dd8eaf4048 100644
+--- a/browser/themes/shared/tabbrowser/tabs.css
++++ b/browser/themes/shared/tabbrowser/tabs.css
+@@ -3610,6 +3610,9 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+ /* Opz: container tabs get a badge with the container's icon and color on
+    the tab icon, like private tabs, instead of the stroke across the tab. */
+ .tabbrowser-tab[usercontextid]:not([opz-private]) {
++  /* Opz: the same container color as the tab preview and the URL bar. */
++  --opz-container-color: var(--identity-fill-color, var(--identity-icon-color));
++
+   > .tab-stack > .tab-background > .tab-context-line {
+     display: none;
+   }
+@@ -3622,9 +3625,9 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+     width: 11px;
+     height: 11px;
+     border-radius: 50%;
+-    background: var(--identity-icon) center / 7px no-repeat var(--identity-icon-color);
++    background: var(--identity-icon) center / 7px no-repeat var(--opz-container-color);
+     -moz-context-properties: fill;
+-    fill: #fff;
++    fill: light-dark(#fff, #000);
+     z-index: 1;
+     pointer-events: none;
+   }
+@@ -3649,7 +3652,7 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+     margin-inline-end: calc(var(--tab-close-button-padding) / -2);
+     background: var(--identity-icon) center / 14px no-repeat;
+     -moz-context-properties: fill;
+-    fill: var(--identity-icon-color);
++    fill: var(--opz-container-color, var(--identity-icon-color));
+     pointer-events: none;
+   }
+ 

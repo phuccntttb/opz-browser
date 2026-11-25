@@ -5,25 +5,28 @@ Subject: [PATCH] Sidebar: Bookmarks button at the bottom of the tab column
  opens bookmarks in a popup
 
 ---
- .../components/sidebar/OpzBookmarksPanel.mjs  | 114 ++++++++++++++++++
+ .../components/sidebar/OpzBookmarksPanel.mjs  | 185 ++++++++++++++++++
  browser/components/sidebar/jar.mn             |   1 +
- browser/components/sidebar/sidebar-main.css   |  31 +++--
- browser/components/sidebar/sidebar-main.mjs   |  16 +++
- 4 files changed, 154 insertions(+), 8 deletions(-)
+ browser/components/sidebar/sidebar-main.css   |  31 ++-
+ browser/components/sidebar/sidebar-main.mjs   |  16 ++
+ .../places/BookmarkHTMLUtils.sys.mjs          |  34 +++-
+ 5 files changed, 254 insertions(+), 13 deletions(-)
  create mode 100644 browser/components/sidebar/OpzBookmarksPanel.mjs
 
 diff --git a/browser/components/sidebar/OpzBookmarksPanel.mjs b/browser/components/sidebar/OpzBookmarksPanel.mjs
 new file mode 100644
-index 0000000000..9f7c9e381b
+index 0000000000..60688bf977
 --- /dev/null
 +++ b/browser/components/sidebar/OpzBookmarksPanel.mjs
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,185 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 +
 +const lazy = {};
 +ChromeUtils.defineESModuleGetters(lazy, {
++  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
++  PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
 +  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 +});
 +
@@ -38,18 +41,17 @@ index 0000000000..9f7c9e381b
 +  /**
 +   * @param {Window} win
 +   * @param {Element} button
-+   *   Gets aria-expanded while the panel is open.
-+   * @param {Element} anchor
-+   *   The panel opens at its end edge, bottoms aligned.
++   *   The panel opens at its end edge, bottoms aligned, and the button gets
++   *   aria-expanded while it is open.
 +   */
-+  static toggle(win, button, anchor) {
++  static toggle(win, button) {
 +    let panel = win.document.getElementById(PANEL_ID);
 +    if (panel && (panel.state == "open" || panel.state == "showing")) {
 +      panel.hidePopup();
 +      return;
 +    }
 +    win.opzBookmarksPanel ??= new OpzBookmarksPanel(win);
-+    win.opzBookmarksPanel.open(button, anchor);
++    win.opzBookmarksPanel.open(button);
 +  }
 +
 +  constructor(win) {
@@ -70,7 +72,7 @@ index 0000000000..9f7c9e381b
 +    this.browser.setAttribute("autoscroll", "false");
 +    this.browser.setAttribute("tooltip", "aHTMLTooltip");
 +    this.browser.style.width = "22em";
-+    this.browser.style.height = "min(32em, 70vh)";
++    this.browser.style.height = "min(56em, 85vh)";
 +    this.browser.setAttribute("src", PAGE);
 +    this.panel.append(this.browser);
 +    doc.getElementById("mainPopupSet").append(this.panel);
@@ -99,10 +101,60 @@ index 0000000000..9f7c9e381b
 +
 +  onPageLoad(pageDoc) {
 +    pageDoc.getElementById("sidebar-panel-header").hidden = true;
-+    pageDoc.getElementById("sidebar-search-container").style.paddingTop =
-+      "var(--space-medium)";
++    let searchContainer = pageDoc.getElementById("sidebar-search-container");
++    let button = (iconsrc, l10nId, onClick) => {
++      let el = pageDoc.createElementNS(
++        "http://www.w3.org/1999/xhtml",
++        "moz-button"
++      );
++      el.setAttribute("type", "icon ghost");
++      el.setAttribute("iconsrc", iconsrc);
++      el.style.marginInlineStart = "var(--space-xxsmall)";
++      pageDoc.l10n.formatMessages([l10nId]).then(([msg]) => {
++        let label = msg?.attributes?.find(a => a.name == "label")?.value;
++        el.title = label;
++        el.ariaLabel = label;
++      });
++      el.addEventListener("click", () => {
++        this.panel.hidePopup();
++        onClick();
++      });
++      return el;
++    };
++    searchContainer.append(
++      button(
++        "chrome://browser/skin/import.svg",
++        "places-import-bookmarks-from-html",
++        () => this.importFromHTML()
++      ),
++      button(
++        "chrome://browser/skin/library.svg",
++        "places-manage-bookmarks",
++        () => this.win.PlacesCommandHook.showPlacesOrganizer("BookmarksToolbar")
++      )
++    );
 +
 +    let tree = pageDoc.getElementById("bookmarks-view");
++    let toolbarGuid = lazy.PlacesUtils.bookmarks.toolbarGuid;
++    let toolbarPlace = `place:parent=${toolbarGuid}`;
++    // The page sets its own place (all roots) on load; replace it afterwards.
++    this.win.setTimeout(() => (tree.place = toolbarPlace), 0);
++    pageDoc.addEventListener(
++      "MozInputSearch:search",
++      e => {
++        if (e.target.id != "search-box") {
++          return;
++        }
++        e.stopPropagation();
++        if (e.target.value) {
++          tree.applyFilter(e.target.value, [toolbarGuid]);
++        } else {
++          tree.place = toolbarPlace;
++        }
++      },
++      true
++    );
++
 +    let closeIfOpened = () => {
 +      let node = tree.selectedNode;
 +      if (node && lazy.PlacesUtils.nodeIsURI(node)) {
@@ -126,10 +178,30 @@ index 0000000000..9f7c9e381b
 +    this.browser.contentDocument?.getElementById("search-box")?.focus();
 +  }
 +
-+  open(button, anchor) {
++  importFromHTML() {
++    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
++    fp.init(
++      this.win.browsingContext,
++      lazy.PlacesUIUtils.promptLocalization.formatValueSync(
++        "places-bookmarks-import"
++      ),
++      Ci.nsIFilePicker.modeOpen
++    );
++    fp.appendFilters(Ci.nsIFilePicker.filterHTML);
++    fp.open(result => {
++      if (result == Ci.nsIFilePicker.returnCancel || !fp.fileURL) {
++        return;
++      }
++      lazy.BookmarkHTMLUtils.importFromURL(fp.fileURL.spec, {
++        parentGuid: lazy.PlacesUtils.bookmarks.toolbarGuid,
++      }).catch(console.error);
++    });
++  }
++
++  open(button) {
 +    this.button = button;
 +    button.setAttribute("aria-expanded", "true");
-+    this.panel.openPopup(anchor, "end_after");
++    this.panel.openPopup(button, "end_after");
 +  }
 +}
 diff --git a/browser/components/sidebar/jar.mn b/browser/components/sidebar/jar.mn
@@ -207,7 +279,7 @@ index 985e1206cf..0c936ead84 100644
 +  background-image: url("chrome://browser/skin/bookmark-hollow.svg");
 +}
 diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
-index e217d23601..f0970dbdc2 100644
+index e217d23601..0710ade799 100644
 --- a/browser/components/sidebar/sidebar-main.mjs
 +++ b/browser/components/sidebar/sidebar-main.mjs
 @@ -1018,7 +1018,16 @@ export default class SidebarMain extends MozLitElement {
@@ -235,9 +307,117 @@ index e217d23601..f0970dbdc2 100644
 +    const { OpzBookmarksPanel } = ChromeUtils.importESModule(
 +      "chrome://browser/content/sidebar/OpzBookmarksPanel.mjs"
 +    );
-+    OpzBookmarksPanel.toggle(window, event.currentTarget, this);
++    OpzBookmarksPanel.toggle(window, event.currentTarget);
 +  }
 +
    opzOpenContainers(event) {
      const { OpzContainersPanel } = ChromeUtils.importESModule(
        "chrome://browser/content/usercontext/OpzContainersPanel.mjs"
+diff --git a/toolkit/components/places/BookmarkHTMLUtils.sys.mjs b/toolkit/components/places/BookmarkHTMLUtils.sys.mjs
+index d4de0a7c63..a39788abc6 100644
+--- a/toolkit/components/places/BookmarkHTMLUtils.sys.mjs
++++ b/toolkit/components/places/BookmarkHTMLUtils.sys.mjs
+@@ -99,6 +99,10 @@ export var BookmarkHTMLUtils = Object.freeze({
+    *        The bookmark change source, used to determine the sync status for
+    *        imported bookmarks. Defaults to `RESTORE` if `replace = true`, or
+    *        `IMPORT` otherwise.
++   * @param {string} [options.parentGuid]
++   *        Opz: import everything into this folder instead of the Bookmarks
++   *        Menu, with the file's toolbar folder merged into it. Only without
++   *        `replace`.
+    *
+    * @returns {Promise<number>} The number of imported bookmarks, not including
+    *   folders and separators. Rejects if there is an issue.
+@@ -110,12 +114,17 @@ export var BookmarkHTMLUtils = Object.freeze({
+       source: aSource = aInitialImport
+         ? PlacesUtils.bookmarks.SOURCES.RESTORE
+         : PlacesUtils.bookmarks.SOURCES.IMPORT,
++      parentGuid: aParentGuid = null,
+     } = {}
+   ) {
+     let bookmarkCount;
+     notifyObservers(PlacesUtils.TOPIC_BOOKMARKS_RESTORE_BEGIN, aInitialImport);
+     try {
+-      let importer = new BookmarkImporter(aInitialImport, aSource);
++      let importer = new BookmarkImporter(
++        aInitialImport,
++        aSource,
++        aInitialImport ? null : aParentGuid
++      );
+       bookmarkCount = await importer.importFromURL(aSpec);
+ 
+       notifyObservers(
+@@ -146,6 +155,10 @@ export var BookmarkHTMLUtils = Object.freeze({
+    *        The bookmark change source, used to determine the sync status for
+    *        imported bookmarks. Defaults to `RESTORE` if `replace = true`, or
+    *        `IMPORT` otherwise.
++   * @param {string} [options.parentGuid]
++   *        Opz: import everything into this folder instead of the Bookmarks
++   *        Menu, with the file's toolbar folder merged into it. Only without
++   *        `replace`.
+    *
+    * @returns {Promise<number>} The number of imported bookmarks, not including
+    *   folders and separators. Rejects if there is an issue.
+@@ -157,6 +170,7 @@ export var BookmarkHTMLUtils = Object.freeze({
+       source: aSource = aInitialImport
+         ? PlacesUtils.bookmarks.SOURCES.RESTORE
+         : PlacesUtils.bookmarks.SOURCES.IMPORT,
++      parentGuid: aParentGuid = null,
+     } = {}
+   ) {
+     let bookmarkCount;
+@@ -167,7 +181,11 @@ export var BookmarkHTMLUtils = Object.freeze({
+           "Cannot import from nonexisting html file: " + aFilePath
+         );
+       }
+-      let importer = new BookmarkImporter(aInitialImport, aSource);
++      let importer = new BookmarkImporter(
++        aInitialImport,
++        aSource,
++        aInitialImport ? null : aParentGuid
++      );
+       bookmarkCount = await importer.importFromURL(
+         PathUtils.toFileURI(aFilePath)
+       );
+@@ -283,9 +301,10 @@ function Frame(aFolder) {
+   this.previousLastModifiedDate = null;
+ }
+ 
+-function BookmarkImporter(aInitialImport, aSource) {
++function BookmarkImporter(aInitialImport, aSource, aParentGuid = null) {
+   this._isImportDefaults = aInitialImport;
+   this._source = aSource;
++  this._parentGuid = aParentGuid;
+ 
+   // This root is where we construct the bookmarks tree into, following the format
+   // of the imported file.
+@@ -296,7 +315,7 @@ function BookmarkImporter(aInitialImport, aSource) {
+   // do separation.
+   this._bookmarkTree = {
+     type: PlacesUtils.bookmarks.TYPE_FOLDER,
+-    guid: PlacesUtils.bookmarks.menuGuid,
++    guid: aParentGuid ?? PlacesUtils.bookmarks.menuGuid,
+     children: [],
+   };
+ 
+@@ -327,6 +346,11 @@ BookmarkImporter.prototype = {
+     frame.previousText = "";
+     let containerType = frame.lastContainerType;
+ 
++    if (this._parentGuid && containerType == Container_Toolbar) {
++      this._frames.push(new Frame(this._bookmarkTree));
++      return;
++    }
++
+     let folder = {
+       children: [],
+       type: PlacesUtils.bookmarks.TYPE_FOLDER,
+@@ -438,7 +462,7 @@ BookmarkImporter.prototype = {
+     // folder, which will have different creation rules when the end tag is
+     // processed.
+     if (aElt.hasAttribute("personal_toolbar_folder")) {
+-      if (this._isImportDefaults) {
++      if (this._isImportDefaults || this._parentGuid) {
+         frame.lastContainerType = Container_Toolbar;
+       }
+     } else if (aElt.hasAttribute("bookmarks_menu")) {
