@@ -202,3 +202,7 @@ pref("browser.places.interactions.enabled", false);
 // opz.containers.sync; the control pref makes the Sync prefs engine carry it.
 pref("opz.containers.sync", "");
 pref("services.sync.prefs.sync.opz.containers.sync", true);
+
+// --- Web apps (Linux: patch 0059) -------------------------------------------
+// Web app windows hide the toolbar until the pointer reaches the top edge.
+pref("opz.webapp.autoHideToolbar", true);

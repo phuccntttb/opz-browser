@@ -1,0 +1,158 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 14:47:46 +0700
+Subject: [PATCH] Web apps: the toolbar hides until the pointer reaches the top
+ edge
+
+In web app windows the toolbar slides down over the page on hover and
+hides again when the pointer leaves, unless the address bar is in use or
+a popup opened from the toolbar is showing. A checkbox in the toolbar
+context menu (opz.webapp.autoHideToolbar) keeps it always shown.
+---
+ browser/base/content/main-popupset.js        | 72 +++++++++++++++++++-
+ browser/locales/en-US/browser/tabbrowser.ftl |  3 +
+ browser/themes/shared/browser-shared.css     | 32 +++++++++
+ 3 files changed, 105 insertions(+), 2 deletions(-)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index ea31a7ce48..35ffe70060 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -806,8 +806,76 @@ window.addEventListener(
+   { once: true }
+ );
+ 
++// Opz: web app windows hide the toolbar until the pointer reaches the top
++// edge (CSS in browser-shared.css). It stays out while a popup opened from
++// it is showing, since the pointer then leaves the toolbar.
++const OPZ_WEBAPP_AUTOHIDE_PREF = "opz.webapp.autoHideToolbar";
++
++function opzSyncWebAppAutoHide() {
++  document.documentElement.toggleAttribute(
++    "opz-autohide-toolbar",
++    Services.prefs.getBoolPref(OPZ_WEBAPP_AUTOHIDE_PREF, true)
++  );
++}
++opzSyncWebAppAutoHide();
++Services.prefs.addObserver(OPZ_WEBAPP_AUTOHIDE_PREF, opzSyncWebAppAutoHide);
++window.addEventListener(
++  "unload",
++  () =>
++    Services.prefs.removeObserver(
++      OPZ_WEBAPP_AUTOHIDE_PREF,
++      opzSyncWebAppAutoHide
++    ),
++  { once: true }
++);
++
++const opzToolbarPopups = new Set();
++function opzTrackToolbarPopup(event) {
++  let popup = event.target;
++  if (!popup.matches?.("menupopup, panel")) {
++    return;
++  }
++  if (event.type == "popupshown") {
++    let anchor = popup.anchorNode || popup.triggerNode;
++    if (!anchor?.closest?.("#navigator-toolbox")) {
++      return;
++    }
++    opzToolbarPopups.add(popup);
++  } else {
++    opzToolbarPopups.delete(popup);
++  }
++  document.documentElement.toggleAttribute(
++    "opz-toolbar-reveal",
++    opzToolbarPopups.size > 0
++  );
++}
++window.addEventListener("popupshown", opzTrackToolbarPopup);
++window.addEventListener("popuphidden", opzTrackToolbarPopup);
++
+ function opzUpdateToolbarOptions(popup) {
+-  let item = popup.querySelector(".opz-toolbar-option");
++  let autoHideItem = popup.querySelector(".opz-webapp-toolbar-option");
++  if (!autoHideItem) {
++    autoHideItem = document.createXULElement("menuitem");
++    autoHideItem.className = "opz-toolbar-option opz-webapp-toolbar-option";
++    autoHideItem.setAttribute("type", "checkbox");
++    document.l10n.setAttributes(autoHideItem, "opz-webapp-toolbar-on-hover");
++    autoHideItem.addEventListener("command", () =>
++      Services.prefs.setBoolPref(
++        OPZ_WEBAPP_AUTOHIDE_PREF,
++        autoHideItem.hasAttribute("checked")
++      )
++    );
++    popup.append(autoHideItem);
++  }
++  autoHideItem.hidden = !document.documentElement.hasAttribute("taskbartab");
++  autoHideItem.toggleAttribute(
++    "checked",
++    Services.prefs.getBoolPref(OPZ_WEBAPP_AUTOHIDE_PREF, true)
++  );
++
++  let item = popup.querySelector(
++    ".opz-toolbar-option:not(.opz-webapp-toolbar-option)"
++  );
+   if (!item) {
+     item = document.createXULElement("menuitem");
+     item.className = "opz-toolbar-option";
+@@ -820,7 +888,7 @@ function opzUpdateToolbarOptions(popup) {
+         !item.hasAttribute("checked")
+       )
+     );
+-    popup.append(item);
++    autoHideItem.before(item);
+   }
+   item.toggleAttribute(
+     "checked",
+diff --git a/browser/locales/en-US/browser/tabbrowser.ftl b/browser/locales/en-US/browser/tabbrowser.ftl
+index 734e9b3aca..72cc6dbc90 100644
+--- a/browser/locales/en-US/browser/tabbrowser.ftl
++++ b/browser/locales/en-US/browser/tabbrowser.ftl
+@@ -530,3 +530,6 @@ opz-tab-context-turn-off-auto-collapse =
+ opz-toolbar-buttons-on-hover =
+     .label = Show buttons only on hover
+     .accesskey = h
++opz-webapp-toolbar-on-hover =
++    .label = Show toolbar only on hover
++    .accesskey = t
+diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
+index 368c691115..2d9f22dd58 100644
+--- a/browser/themes/shared/browser-shared.css
++++ b/browser/themes/shared/browser-shared.css
+@@ -1695,3 +1695,35 @@ popupnotificationcontent {
+ #syncedTabsOpenSelectedInPrivateWindow {
+   display: none !important;
+ }
++
++/* Opz: web app windows can hide the toolbar until the pointer reaches the
++ * top edge; it then slides down over the page. It stays while the address
++ * bar is in use or a popup opened from it is showing (opz-toolbar-reveal,
++ * main-popupset.js). */
++:root[taskbartab][opz-autohide-toolbar]:not([inFullscreen]) #navigator-toolbox {
++  position: fixed;
++  inset-inline: 0;
++  top: 0;
++  z-index: 3;
++  background: inherit;
++  /* A strip at the top edge stays under the pointer to bring it back. */
++  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
++  translate: 0 calc(6px - 100%);
++  opacity: 0;
++  transition:
++    translate 150ms ease,
++    opacity 150ms ease;
++  transition-delay: 400ms;
++
++  &:hover,
++  &:has(#urlbar:is([focused], [open], :focus-within)),
++  :root[opz-toolbar-reveal] & {
++    translate: none;
++    opacity: 1;
++    transition-delay: 100ms;
++  }
++
++  @media (prefers-reduced-motion: reduce) {
++    transition-property: opacity;
++  }
++}
