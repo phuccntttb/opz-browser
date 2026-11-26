@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 14:09:02 +0700
+Subject: [PATCH] Web apps: install a site as an app on Linux
+
+Turn on browser.taskbarTabs.enabled for GTK builds. Desktop entries run
+MOZ_APP_LAUNCHER (Opz's launcher script) when it is set, and carry
+StartupWMClass. A host with no name left after its public suffix (e.g.
+localhost) is used as the app name.
+---
+ browser/app/profile/firefox.js                           | 2 +-
+ browser/components/shell/ShellService.sys.mjs            | 9 +++++++++
+ .../components/taskbartabs/TaskbarTabsRegistry.sys.mjs   | 3 ++-
+ 3 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+index 0f4b2915ad..5332911c32 100644
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -391,7 +391,7 @@ pref("browser.warnOnQuit", true);
+ 
+ pref("browser.overlink-delay", 80);
+ 
+-#if defined(XP_WIN)
++#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+   pref("browser.taskbarTabs.enabled", true);
+ #else
+   pref("browser.taskbarTabs.enabled", false);
+diff --git a/browser/components/shell/ShellService.sys.mjs b/browser/components/shell/ShellService.sys.mjs
+index e6b3089bd1..073fb3200a 100644
+--- a/browser/components/shell/ShellService.sys.mjs
++++ b/browser/components/shell/ShellService.sys.mjs
+@@ -1131,6 +1131,8 @@ let ShellServiceInternal = {
+     ini.setString("Desktop Entry", "Version", "1.5");
+     ini.setString("Desktop Entry", "Name", title);
+     ini.setString("Desktop Entry", "Icon", iconPath);
++    // Opz: lets X11 docks group the window under this entry.
++    ini.setString("Desktop Entry", "StartupWMClass", appId);
+ 
+     // All desktop files made with this must run the Firefox executable.
+     argv.unshift(await ShellService._findStartupCommand());
+@@ -1196,6 +1198,13 @@ let ShellServiceInternal = {
+    * browser.
+    */
+   async _findStartupCommand() {
++    // Opz: the launcher script sets up application.ini; the binary alone
++    // would not start Opz.
++    let launcher = Services.env.get("MOZ_APP_LAUNCHER");
++    if (launcher) {
++      return launcher;
++    }
++
+     let executableFile = Services.dirsvc.get("XREExeF", Ci.nsIFile);
+ 
+     let wanted = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+diff --git a/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs b/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
+index 72ad9b6cde..ae51b4c608 100644
+--- a/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
++++ b/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
+@@ -564,5 +564,6 @@ export function generateName(aUri) {
+     // "Example Subdomain"
+     .join(" ");
+ 
+-  return name;
++  // Opz: hosts like "localhost" have nothing left after the suffix.
++  return name || aUri.host;
+ }
