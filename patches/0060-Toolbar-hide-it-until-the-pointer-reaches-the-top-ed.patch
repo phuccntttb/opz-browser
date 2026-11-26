@@ -10,17 +10,17 @@ on the other sides, and the toolbar only covers the content area, never the tab 
 off: opz.webapp.autoHideToolbar for web app windows (on by default) and
 opz.toolbar.autoHide for browser windows (off by default).
 ---
- browser/base/content/main-popupset.js         | 117 +++++++++++++++++-
+ browser/base/content/main-popupset.js         | 128 +++++++++++++++++-
  browser/locales/en-US/browser/tabbrowser.ftl  |   3 +
- browser/themes/shared/browser-shared.css      |  33 +++++
+ browser/themes/shared/browser-shared.css      |  32 +++++
  .../themes/shared/tabbrowser/content-area.css |   5 +
- 4 files changed, 156 insertions(+), 2 deletions(-)
+ 4 files changed, 166 insertions(+), 2 deletions(-)
 
 diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
-index ea31a7ce48..ab6fd5fa47 100644
+index ea31a7ce48..3be5a87d27 100644
 --- a/browser/base/content/main-popupset.js
 +++ b/browser/base/content/main-popupset.js
-@@ -806,8 +806,121 @@ window.addEventListener(
+@@ -806,8 +806,132 @@ window.addEventListener(
    { once: true }
  );
  
@@ -88,6 +88,17 @@ index ea31a7ce48..ab6fd5fa47 100644
 +    };
 +    new ResizeObserver(update).observe(tabbox);
 +    window.addEventListener("resize", update);
++
++    // The toolbar slides with 'top' rather than a transform: a transform
++    // would become the containing block of the idle address bar, which is
++    // fixed to the middle of the window (urlbar.css).
++    let toolbox = document.getElementById("navigator-toolbox");
++    new ResizeObserver(() =>
++      document.documentElement.style.setProperty(
++        "--opz-toolbox-height",
++        `${toolbox.getBoundingClientRect().height}px`
++      )
++    ).observe(toolbox);
 +  },
 +  { once: true }
 +);
@@ -143,7 +154,7 @@ index ea31a7ce48..ab6fd5fa47 100644
    if (!item) {
      item = document.createXULElement("menuitem");
      item.className = "opz-toolbar-option";
-@@ -820,7 +933,7 @@ function opzUpdateToolbarOptions(popup) {
+@@ -820,7 +944,7 @@ function opzUpdateToolbarOptions(popup) {
          !item.hasAttribute("checked")
        )
      );
@@ -164,10 +175,10 @@ index 734e9b3aca..72cc6dbc90 100644
 +    .label = Show toolbar only on hover
 +    .accesskey = t
 diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
-index 368c691115..82fd2244a2 100644
+index 368c691115..7339fc16bf 100644
 --- a/browser/themes/shared/browser-shared.css
 +++ b/browser/themes/shared/browser-shared.css
-@@ -1695,3 +1695,36 @@ popupnotificationcontent {
+@@ -1695,3 +1695,35 @@ popupnotificationcontent {
  #syncedTabsOpenSelectedInPrivateWindow {
    display: none !important;
  }
@@ -180,22 +191,21 @@ index 368c691115..82fd2244a2 100644
 +  position: fixed;
 +  left: var(--opz-toolbox-left, 0);
 +  right: var(--opz-toolbox-right, 0);
-+  top: 0;
-+  z-index: 3;
-+  background: inherit;
 +  /* A strip at the top edge stays under the pointer to bring it back. */
 +  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-+  translate: 0 calc(6px - 100%);
++  top: calc(6px - var(--opz-toolbox-height, 40px));
++  z-index: 3;
++  background: inherit;
 +  opacity: 0;
 +  transition:
-+    translate 150ms ease,
++    top 150ms ease,
 +    opacity 150ms ease;
 +  transition-delay: 400ms;
 +
 +  &:hover,
 +  &:has(#urlbar:is([focused], [open], :focus-within)),
 +  :root[opz-toolbar-reveal] & {
-+    translate: none;
++    top: 0;
 +    opacity: 1;
 +    transition-delay: 100ms;
 +  }
