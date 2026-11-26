@@ -58,12 +58,10 @@ pref("browser.shell.checkDefaultBrowser", false);
 // (sidebar.revamp, already true in firefox.js). Users can go back to
 // horizontal tabs in Settings > Tabs and browsing or the tab strip's menu.
 //
-// The tab column stays collapsed to icons and expands on hover. This has to be
-// the default value too, not only a one-time setting (patch 0010): Firefox's
-// default is "always-show", and a pref set to its default is not kept as a
-// user value, so a profile without one would never expand on hover. The pin
-// button (patch 0021) stores "always-show" as a user value.
-pref("sidebar.visibility", "expand-on-hover");
+// The tab column starts expanded (sidebar.visibility "always-show", Firefox's
+// default). The toolbar's sidebar button (patch 0064) collapses it to icons
+// ("expand-on-hover", stored as a user value).
+pref("sidebar.visibility", "always-show");
 
 // Whether hovering the collapsed tab column expands it. Turned off from the
 // tab context menu's "Expand sidebar on hover" (patch 0042); the column then
@@ -208,3 +206,6 @@ pref("services.sync.prefs.sync.opz.containers.sync", true);
 pref("opz.webapp.autoHideToolbar", true);
 // Browser windows can do the same (toolbar context menu); off by default.
 pref("opz.toolbar.autoHide", false);
+// Toolbar buttons and address bar icons always show; the toolbar context
+// menu's "Show buttons only on hover" hides them until the pointer is over it.
+pref("opz.toolbar.alwaysShowButtons", true);

@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 19:07:21 +0700
+Subject: [PATCH] Defaults: tab column expanded, toolbar buttons always shown
+
+---
+ browser/base/content/main-popupset.js         |  4 ++--
+ .../components/sidebar/SidebarManager.sys.mjs | 23 +------------------
+ 2 files changed, 3 insertions(+), 24 deletions(-)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index 453e4de3b4..0eaed42043 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -792,7 +792,7 @@ const OPZ_ALWAYS_SHOW_PREF = "opz.toolbar.alwaysShowButtons";
+ function opzSyncAlwaysShowButtons() {
+   document.documentElement.toggleAttribute(
+     "opz-always-show-buttons",
+-    Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, false)
++    Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, true)
+   );
+ }
+ opzSyncAlwaysShowButtons();
+@@ -1021,6 +1021,6 @@ function opzUpdateToolbarOptions(popup) {
+   }
+   item.toggleAttribute(
+     "checked",
+-    !Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, false)
++    !Services.prefs.getBoolPref(OPZ_ALWAYS_SHOW_PREF, true)
+   );
+ }
+diff --git a/browser/components/sidebar/SidebarManager.sys.mjs b/browser/components/sidebar/SidebarManager.sys.mjs
+index 1eb89bfbd1..2d983ac28a 100644
+--- a/browser/components/sidebar/SidebarManager.sys.mjs
++++ b/browser/components/sidebar/SidebarManager.sys.mjs
+@@ -20,11 +20,7 @@ const VERTICAL_VISIBILITIES = [
+   "hide-sidebar",
+ ];
+ const HORIZONTAL_VISIBILITIES = ["hide-on-close", "hide-launcher"];
+-// Opz: with vertical tabs the tab column stays collapsed to icons and expands
+-// while the pointer is over it.
+-const DEFAULT_VERTICAL_VISIBILITY = "expand-on-hover";
+-// Opz: marks the one-time move of an existing profile from "always-show".
+-const OPZ_EXPAND_ON_HOVER_APPLIED_PREF = "opz.expandOnHoverApplied";
++const DEFAULT_VERTICAL_VISIBILITY = "always-show";
+ // Opz: with horizontal tabs, no launcher column of tool icons. Bookmarks,
+ // history and the other tools open as panels with a switcher in their header;
+ // the sidebar's Customize panel can bring the launcher back.
+@@ -127,23 +123,6 @@ class SidebarManager extends EventTarget {
+       this.checkForPinnedTabs();
+     });
+ 
+-    // Opz: a profile that already had vertical tabs always expanded moves to
+-    // expand-on-hover once; a later choice in the sidebar's Customize panel
+-    // is kept.
+-    if (!Services.prefs.getBoolPref(OPZ_EXPAND_ON_HOVER_APPLIED_PREF, false)) {
+-      if (
+-        lazy.verticalTabsEnabled &&
+-        Services.prefs.getStringPref(VISIBILITY_SETTING_PREF, "") ==
+-          "always-show"
+-      ) {
+-        Services.prefs.setStringPref(
+-          VISIBILITY_SETTING_PREF,
+-          DEFAULT_VERTICAL_VISIBILITY
+-        );
+-      }
+-      Services.prefs.setBoolPref(OPZ_EXPAND_ON_HOVER_APPLIED_PREF, true);
+-    }
+-
+     // Move the visibility to the orientation's default if the current value
+     // isn't valid for it (e.g. a value carried over from the other orientation).
+     this.handleVerticalTabsPrefChange(lazy.verticalTabsEnabled);

@@ -82,11 +82,9 @@ Phần lớn nằm trong `prefs/`; chỉ những chỗ không có pref/policy n�
 - **Nút Extensions** (mảnh ghép): ẩn bằng `extensions.unifiedExtensions.button.always_visible=false`
   trong `prefs/opz.js`. Nút vẫn hiện khi một tiện ích cần chú ý; quản lý tiện ích qua menu → Add-ons
   and themes; tiện ích đã ghim lên thanh công cụ vẫn có nút riêng.
-- **Patch `0010-Sidebar-...`**: với tab dọc, mặc định là `sidebar.visibility = "expand-on-hover"`
-  (sửa `DEFAULT_VERTICAL_VISIBILITY` trong `SidebarManager.sys.mjs` và giá trị tương ứng trong
-  `browser-sidebar.js`): cột tab thu gọn thành icon, rê chuột vào thì mở rộng, rời chuột thì thu lại.
-  Profile cũ đang để "always-show" được chuyển một lần (đánh dấu bằng `opz.expandOnHoverApplied`);
-  muốn cột luôn mở rộng thì chọn lại trong Customize của sidebar.
+- **Patch `0010-Sidebar-...`** (mặc định đổi lại ở `0068`): với tab dọc, cột tab mở rộng sẵn
+  (`sidebar.visibility = "always-show"`); nút sidebar trên thanh công cụ thu gọn nó thành icon, khi
+  đó rê chuột vào thì mở rộng, rời chuột thì thu lại.
 - **Patch `0005-Toolbar-...`**: bỏ nút "List all tabs" (biểu tượng cửa sổ có kính lúp) khỏi bố cục
   mặc định, và gỡ nó khỏi profile cũ một lần (đánh dấu bằng `opz.customizableui.allTabsButtonRemoved`).
   Người dùng thêm lại được qua Customize Toolbar.
