@@ -6,12 +6,14 @@ Subject: [PATCH] Web apps: install a site as an app on Linux
 Turn on browser.taskbarTabs.enabled for GTK builds. Desktop entries run
 MOZ_APP_LAUNCHER (Opz's launcher script) when it is set, and carry
 StartupWMClass. A host with no name left after its public suffix (e.g.
-localhost) is used as the app name.
+localhost) is used as the app name. Web app windows have no titlebar
+spacers, like the main window.
 ---
  browser/app/profile/firefox.js                           | 2 +-
  browser/components/shell/ShellService.sys.mjs            | 9 +++++++++
  .../components/taskbartabs/TaskbarTabsRegistry.sys.mjs   | 3 ++-
- 3 files changed, 12 insertions(+), 2 deletions(-)
+ browser/themes/shared/browser-shared.css                 | 5 +++++
+ 4 files changed, 17 insertions(+), 2 deletions(-)
 
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 index 0f4b2915ad..5332911c32 100644
@@ -65,3 +67,19 @@ index 72ad9b6cde..ae51b4c608 100644
 +  // Opz: hosts like "localhost" have nothing left after the suffix.
 +  return name || aUri.host;
  }
+diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
+index babcf5ca67..368c691115 100644
+--- a/browser/themes/shared/browser-shared.css
++++ b/browser/themes/shared/browser-shared.css
+@@ -466,6 +466,11 @@ body {
+       display: none;
+     }
+   }
++
++  /* Opz: web app windows match the main window, which has no spacers. */
++  :root[taskbartab] & {
++    display: none;
++  }
+ }
+ 
+ /* Hide the TabsToolbar/nav-bar titlebar controls if the menubar is permanently shown.
