@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 17:29:01 +0700
+Subject: [PATCH] Sidebar: the tab column paints a theme's window background
+ too
+
+With a theme whose background covers the whole window (a gradient, no
+header image), the expand-on-hover tab column painted only the frame
+color, so it did not match the gradient around it. It now paints the
+theme background sized to the window and shifted by the column's layout
+offset (main-popupset.js), so the gradient runs on across it.
+---
+ browser/base/content/main-popupset.js | 21 +++++++++++++++++++++
+ browser/themes/shared/sidebar.css     | 18 ++++++++++++++++++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index cc90708252..136d119baf 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -871,6 +871,27 @@ window.addEventListener(
+     new ResizeObserver(update).observe(tabbox);
+     window.addEventListener("resize", update);
+ 
++    // The tab column paints the theme's window background (sidebar.css)
++    // shifted by its own offset in the window.
++    let sidebar = document.getElementById("sidebar-container");
++    // Layout offsets, not getBoundingClientRect(): the column slides with a
++    // transform while it expands, and that must not move the background.
++    let updateSidebarBackground = () => {
++      let left = 0;
++      let top = 0;
++      for (let el = sidebar; el; el = el.offsetParent) {
++        left += el.offsetLeft;
++        top += el.offsetTop;
++      }
++      let root = document.documentElement;
++      root.style.setProperty("--opz-sidebar-bg-x", `${-left}px`);
++      root.style.setProperty("--opz-sidebar-bg-y", `${-top}px`);
++    };
++    let sidebarObserver = new ResizeObserver(updateSidebarBackground);
++    sidebarObserver.observe(sidebar);
++    sidebarObserver.observe(tabbox);
++    window.addEventListener("resize", updateSidebarBackground);
++
+     // The toolbar slides with 'top' rather than a transform: a transform
+     // would become the containing block of the idle address bar, which is
+     // fixed to the middle of the window (urlbar.css).
+diff --git a/browser/themes/shared/sidebar.css b/browser/themes/shared/sidebar.css
+index 1efaf7aad8..15877cb7ea 100644
+--- a/browser/themes/shared/sidebar.css
++++ b/browser/themes/shared/sidebar.css
+@@ -582,3 +582,21 @@ sidebar-main,
+     display: none;
+   }
+ }
++
++/* Opz: with a theme whose background is drawn over the whole window (a
++ * gradient, no header image), the expand-on-hover tab column paints that
++ * background like body does; Firefox only paints the Nova gradient and the
++ * frame color there. It is sized to the window and shifted by the column's
++ * offset in it (main-popupset.js), so it lines up with the window around
++ * it. */
++:root[lwtheme][sidebar-expand-on-hover]:not([theme-image-in-toolbox], [lwtheme-image]) #sidebar-container {
++  background-image: var(--toolbox-background-image);
++  background-repeat: no-repeat;
++  background-size: 100vw 100vh;
++  background-position: var(--opz-sidebar-bg-x, 0) var(--opz-sidebar-bg-y, 0);
++  background-color: var(--toolbox-background-color);
++
++  &:-moz-window-inactive {
++    background-color: var(--toolbox-background-color-inactive);
++  }
++}
