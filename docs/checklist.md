@@ -21,7 +21,8 @@ Chạy sau mỗi lần build lớn hoặc nâng cấp Firefox:
 - [ ] **Firefox View:** không có nút ở thanh tab, không có trong Customize và menu Tools.
 - [ ] **Tab dọc:** profile mới mở ra với tab dọc bên trái, không có icon công cụ ở đáy cột; cột tab
   mở rộng sẵn, nút sidebar trên thanh sáng; bấm nút thì cột thu gọn thành icon, rê chuột vào thì
-  mở rộng, rời chuột thì thu lại; mọi nút trên thanh công cụ luôn hiện; Settings →
+  mở rộng, rời chuột thì thu lại (tắt "Expand sidebar on hover" thì rê vào tab có nút x để đóng);
+  mọi nút trên thanh công cụ luôn hiện; Settings →
   Tabs and browsing có "Browser layout" để chuyển về tab ngang. Chuyển sang tab ngang thì cột
   bên trái biến mất hẳn; Cmd+B / Ctrl+B mở panel bookmark có nút chọn panel ở tiêu đề.
 - [ ] **New Tab:** trống hẳn: không có ô tìm kiếm, Top Sites, Highlights, widget hay hình nền.

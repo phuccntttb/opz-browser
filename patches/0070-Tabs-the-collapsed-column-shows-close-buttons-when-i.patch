@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 19:28:57 +0700
+Subject: [PATCH] Tabs: the collapsed column shows close buttons when it does
+ not expand on hover
+
+---
+ browser/components/sidebar/browser-sidebar.js | 9 +++++++++
+ browser/themes/shared/tabbrowser/tabs.css     | 6 ++++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index 17d316f817..1983471150 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -2879,8 +2879,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
+       // Expand right away if the pointer is already over the column.
+       SidebarController._reconcileHoverState();
+     }
++    opzSyncExpandOnHoverAttribute();
+   }
+ );
++// Lets the collapsed column show the tabs' close buttons (tabs.css).
++function opzSyncExpandOnHoverAttribute() {
++  document.documentElement.toggleAttribute(
++    "opz-no-expand-on-hover",
++    !SidebarController.opzExpandOnHover
++  );
++}
++opzSyncExpandOnHoverAttribute();
+ 
+ // Add getters related to the position here, since we will want them
+ // available for both startDelayedLoad and init.
+diff --git a/browser/themes/shared/tabbrowser/tabs.css b/browser/themes/shared/tabbrowser/tabs.css
+index dd8eaf4048..20aae2289b 100644
+--- a/browser/themes/shared/tabbrowser/tabs.css
++++ b/browser/themes/shared/tabbrowser/tabs.css
+@@ -3664,3 +3664,9 @@ toolbar:not(#TabsToolbar) #firefox-view-button {
+     visibility: collapse;
+   }
+ }
++
++/* Opz: with "Expand sidebar on hover" off, the collapsed column does not
++ * expand under the pointer, so its tabs show their close button on hover. */
++:root[opz-no-expand-on-hover] #tabbrowser-tabs[orient="vertical"]:not([expanded]) .tabbrowser-tab:not([pinned]) .tab-close-button {
++  display: block;
++}
