@@ -1,0 +1,318 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 16:59:17 +0700
+Subject: [PATCH] Sidebar: the toolbar's sidebar button pins the tab column
+ open
+
+Firefox's sidebar button is back at the start of the nav-bar (older
+profiles get it once, opz.customizableui.sidebarButtonRestored). With
+vertical tabs a click pins the column open (sidebar.visibility =
+always-show) and a second click unpins and collapses it
+(expand-on-hover); the button is checked while pinned. It replaces the pin
+button at the bottom of the column and the Turn off auto-collapse item in
+the tab context menu.
+---
+ .../customizableui/CustomizableUI.sys.mjs     | 24 ++++++-
+ browser/components/sidebar/browser-sidebar.js | 14 +++-
+ browser/components/sidebar/sidebar-main.css   | 13 ++--
+ browser/components/sidebar/sidebar-main.mjs   | 68 +++++++------------
+ .../tabbrowser/content/tab-context-menu.js    | 28 ++------
+ browser/locales/en-US/browser/tabbrowser.ftl  |  3 -
+ browser/themes/shared/toolbarbuttons.css      |  4 +-
+ 7 files changed, 71 insertions(+), 83 deletions(-)
+
+diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
+index f316b6a254..8fcc89718c 100644
+--- a/browser/components/customizableui/CustomizableUI.sys.mjs
++++ b/browser/components/customizableui/CustomizableUI.sys.mjs
+@@ -79,7 +79,10 @@ const kPrefOpzAllTabsButtonRemoved =
+ // appended to the end of the nav-bar again.
+ const kPrefOpzNavBarButtonsRemoved =
+   "opz.customizableui.navBarButtonsRemovedV2";
+-const kOpzRemovedNavBarButtons = ["sidebar-button", "new-tab-button"];
++const kOpzRemovedNavBarButtons = ["new-tab-button"];
++// Opz: the sidebar button came back as the toggle for pinning the tab column.
++const kPrefOpzSidebarButtonRestored =
++  "opz.customizableui.sidebarButtonRestored";
+ 
+ /**
+  * Buttons removed from built-ins by version they were removed. kVersion must be
+@@ -369,8 +372,8 @@ var CustomizableUIInternal = {
+     );
+ 
+     let navbarPlacements = [
+-      // Opz: no sidebar button; the tab column expands on hover and the
+-      // panels open from View > Sidebar or their keyboard shortcuts.
++      // Opz: the sidebar button pins the tab column open and unpins it.
++      "sidebar-button",
+       "back-button",
+       "forward-button",
+       "stop-reload-button",
+@@ -1120,6 +1123,21 @@ var CustomizableUIInternal = {
+       Services.prefs.setBoolPref(kPrefOpzNavBarButtonsRemoved, true);
+     }
+ 
++    // Opz: put the sidebar button back at the start of older profiles'
++    // nav-bar (patch 0019 took it off), once.
++    if (!Services.prefs.getBoolPref(kPrefOpzSidebarButtonRestored, false)) {
++      let navbar = gSavedState.placements?.[CustomizableUI.AREA_NAVBAR];
++      if (
++        Array.isArray(navbar) &&
++        !Object.values(gSavedState.placements).some(
++          ids => Array.isArray(ids) && ids.includes("sidebar-button")
++        )
++      ) {
++        navbar.unshift("sidebar-button");
++      }
++      Services.prefs.setBoolPref(kPrefOpzSidebarButtonRestored, true);
++    }
++
+     // Opz: there is no Customize Toolbar to put the downloads button back, and
+     // without it the downloads panel has nothing to open from.
+     let placements = gSavedState.placements || {};
+diff --git a/browser/components/sidebar/browser-sidebar.js b/browser/components/sidebar/browser-sidebar.js
+index c3b4743857..17d316f817 100644
+--- a/browser/components/sidebar/browser-sidebar.js
++++ b/browser/components/sidebar/browser-sidebar.js
+@@ -1543,6 +1543,16 @@ var SidebarController = {
+       return;
+     }
+ 
++    // Opz: with vertical tabs the button pins the tab column open, and a
++    // second click unpins it so it collapses again (sidebar-main.mjs).
++    if (
++      this.sidebarVerticalTabsEnabled &&
++      ["always-show", "expand-on-hover"].includes(this.sidebarRevampVisibility)
++    ) {
++      this.sidebarMain.opzToggleAutoCollapse();
++      return;
++    }
++
+     const initialExpandedValue = this._state.launcherExpanded;
+ 
+     // What toggle means depends on the sidebar.visibility pref. Expanding the
+@@ -1626,7 +1636,9 @@ var SidebarController = {
+         case "always-show":
+         case "expand-on-hover": {
+           // Vertical tabs: the toolbar button controls the expanded state.
+-          const isExpanded = this.sidebarMain.expanded;
++          // Opz: it shows whether the column is pinned open, not whether
++          // hovering has expanded it for now.
++          const isExpanded = this.sidebarRevampVisibility == "always-show";
+           toolbarButton.checked = isExpanded;
+           toolbarButton.dataset.l10nId = isExpanded
+             ? "sidebar-widget-collapse-sidebar2"
+diff --git a/browser/components/sidebar/sidebar-main.css b/browser/components/sidebar/sidebar-main.css
+index 0c936ead84..2743040b04 100644
+--- a/browser/components/sidebar/sidebar-main.css
++++ b/browser/components/sidebar/sidebar-main.css
+@@ -232,16 +232,14 @@
+   align-self: end;
+ }
+ 
+-/* Opz: a pin button at the bottom of the expanded tab column that turns the
+- * auto-collapse (expand on hover) off and on. Only shown while expanded, and only visible while the pointer is over the column. */
+-.opz-auto-collapse-button,
++/* Opz: the Containers button at the bottom of the expanded tab column, only
++ * visible while the pointer is over the column. */
+ .opz-containers-button {
+   display: none;
+ }
+ 
+-/* Opz: the Containers button sits left of the pin button and looks the same.
+- * The Bookmarks button is at the start of the row and always visible, also
+- * while the column is collapsed. */
++/* Opz: the Bookmarks button is at the start of the row and always visible,
++ * also while the column is collapsed. */
+ .opz-bottom-buttons {
+   display: flex;
+   flex: none;
+@@ -260,7 +258,7 @@
+ }
+ 
+ .opz-bookmarks-button,
+-:host([expanded]) :is(.opz-auto-collapse-button, .opz-containers-button) {
++:host([expanded]) .opz-containers-button {
+   display: block;
+   flex: none;
+   box-sizing: border-box;
+@@ -292,7 +290,6 @@
+     background-color: color-mix(in srgb, currentColor 10%, transparent);
+   }
+ 
+-  &[aria-pressed="true"],
+   &[aria-expanded="true"] {
+     background-color: color-mix(in srgb, currentColor 18%, transparent);
+   }
+diff --git a/browser/components/sidebar/sidebar-main.mjs b/browser/components/sidebar/sidebar-main.mjs
+index 0710ade799..437d9e2cd4 100644
+--- a/browser/components/sidebar/sidebar-main.mjs
++++ b/browser/components/sidebar/sidebar-main.mjs
+@@ -1006,44 +1006,28 @@ export default class SidebarMain extends MozLitElement {
+             </moz-button>
+           </button-group>
+         </div>
+-        ${when(
+-          window.SidebarController.sidebarVerticalTabsEnabled,
+-          () => {
+-            const pinned =
+-              window.SidebarController.sidebarRevampVisibility !==
+-              "expand-on-hover";
+-            const label = pinned
+-              ? "Turn on auto-collapse"
+-              : "Turn off auto-collapse";
+-            const containersLabel = this.fluentStrings
+-              .formatMessagesSync(["user-context-manage-containers2"])?.[0]
+-              ?.attributes?.find(attr => attr.name === "label")?.value;
+-            const bookmarksLabel = this.fluentStrings
+-              .formatMessagesSync(["sidebar-menu-bookmarks-label"])?.[0]
+-              ?.attributes?.find(attr => attr.name === "label")?.value;
+-            return html`<div class="opz-bottom-buttons">
+-              <button
+-                class="opz-bookmarks-button"
+-                title=${bookmarksLabel}
+-                aria-label=${bookmarksLabel}
+-                @click=${this.opzOpenBookmarks}
+-              ></button>
+-              <button
+-                class="opz-containers-button"
+-                title=${containersLabel}
+-                aria-label=${containersLabel}
+-                @click=${this.opzOpenContainers}
+-              ></button>
+-              <button
+-                class="opz-auto-collapse-button"
+-                title=${label}
+-                aria-label=${label}
+-                aria-pressed=${pinned}
+-                @click=${this.opzToggleAutoCollapse}
+-              ></button>
+-            </div>`;
+-          }
+-        )}
++        ${when(window.SidebarController.sidebarVerticalTabsEnabled, () => {
++          const containersLabel = this.fluentStrings
++            .formatMessagesSync(["user-context-manage-containers2"])?.[0]
++            ?.attributes?.find(attr => attr.name === "label")?.value;
++          const bookmarksLabel = this.fluentStrings
++            .formatMessagesSync(["sidebar-menu-bookmarks-label"])?.[0]
++            ?.attributes?.find(attr => attr.name === "label")?.value;
++          return html`<div class="opz-bottom-buttons">
++            <button
++              class="opz-bookmarks-button"
++              title=${bookmarksLabel}
++              aria-label=${bookmarksLabel}
++              @click=${this.opzOpenBookmarks}
++            ></button>
++            <button
++              class="opz-containers-button"
++              title=${containersLabel}
++              aria-label=${containersLabel}
++              @click=${this.opzOpenContainers}
++            ></button>
++          </div>`;
++        })}
+       </div>
+     `;
+   }
+@@ -1064,14 +1048,14 @@ export default class SidebarMain extends MozLitElement {
+ 
+   opzToggleAutoCollapse() {
+     const controller = window.SidebarController;
+-    const autoCollapse = controller.sidebarRevampVisibility === "expand-on-hover";
++    const autoCollapse =
++      controller.sidebarRevampVisibility === "expand-on-hover";
+     Services.prefs.setStringPref(
+       "sidebar.visibility",
+       autoCollapse ? "always-show" : "expand-on-hover"
+     );
+-    if (autoCollapse) {
+-      controller._state.launcherExpanded = true;
+-    }
++    controller._state.launcherExpanded = autoCollapse;
++    controller.updateToolbarButton();
+     this.requestUpdate();
+   }
+ }
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index d339cee131..194679ec4f 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -348,7 +348,10 @@ var TabContextMenu = {
+       tabContextMenu: [
+         {
+           name: "actions-row",
+-          items: ["#opz_context_tabActions", "#context_openAndOrganizeSeparator"],
++          items: [
++            "#opz_context_tabActions",
++            "#context_openAndOrganizeSeparator",
++          ],
+         },
+         {
+           name: "open-and-organize",
+@@ -1377,29 +1380,6 @@ var TabContextMenu = {
+       "checked",
+       Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
+     );
+-
+-    // Opz: the same switch as the pin button at the bottom of the column.
+-    let autoCollapseItem = document.getElementById(
+-      "opz_context_noAutoCollapse"
+-    );
+-    if (!autoCollapseItem) {
+-      autoCollapseItem = document.createXULElement("menuitem");
+-      autoCollapseItem.id = "opz_context_noAutoCollapse";
+-      autoCollapseItem.setAttribute("type", "checkbox");
+-      document.l10n.setAttributes(
+-        autoCollapseItem,
+-        "opz-tab-context-turn-off-auto-collapse"
+-      );
+-      autoCollapseItem.addEventListener("command", () =>
+-        document.querySelector("sidebar-main")?.opzToggleAutoCollapse()
+-      );
+-      item.after(autoCollapseItem);
+-    }
+-    autoCollapseItem.hidden = item.hidden;
+-    autoCollapseItem.toggleAttribute(
+-      "checked",
+-      SidebarController.sidebarRevampVisibility != "expand-on-hover"
+-    );
+   },
+ 
+   // Opz: a new tab in a container, like the New Tab button's popup.
+diff --git a/browser/locales/en-US/browser/tabbrowser.ftl b/browser/locales/en-US/browser/tabbrowser.ftl
+index 72cc6dbc90..a15bbdf92b 100644
+--- a/browser/locales/en-US/browser/tabbrowser.ftl
++++ b/browser/locales/en-US/browser/tabbrowser.ftl
+@@ -521,9 +521,6 @@ split-view-menuitem-close-both-tabs =
+ 
+ ## Opz: tab context menu
+ 
+-opz-tab-context-turn-off-auto-collapse =
+-    .label = Turn off auto-collapse
+-    .accesskey = T
+ 
+ ## Opz: toolbar context menu, on its empty space
+ 
+diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
+index 99e3828127..2af7555528 100644
+--- a/browser/themes/shared/toolbarbuttons.css
++++ b/browser/themes/shared/toolbarbuttons.css
+@@ -845,7 +845,7 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+ 
+   &:hover,
+   &:focus-within,
+-  &:has(toolbarbutton[open], toolbarbutton[checked]) {
++  &:has(toolbarbutton[open], toolbarbutton:not(#sidebar-button)[checked]) {
+     & .webextension-browser-action,
+     & #unified-extensions-button,
+     & #PanelUI-button,
+@@ -870,7 +870,7 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+ 
+   &:hover,
+   &:focus-within,
+-  &:has(toolbarbutton[open], toolbarbutton[checked]) {
++  &:has(toolbarbutton[open], toolbarbutton:not(#sidebar-button)[checked]) {
+     & #back-button,
+     & #forward-button,
+     & #stop-reload-button,
