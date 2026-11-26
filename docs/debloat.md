@@ -128,7 +128,7 @@ Opz không tự viết bộ chặn riêng (giống Zen):
   trong trang báo cáo bảo vệ.
 
 Tài khoản Mozilla và Sync **không bị tắt**: đăng nhập trong Settings → Account and sync như Firefox.
-Tab riêng tư không được đồng bộ (`0035`); Firefox Relay vẫn tắt trong `opz.js`.
+Tab riêng tư không được đồng bộ (`0035`); container đồng bộ cùng mục Settings (`0058`); Firefox Relay vẫn tắt trong `opz.js`.
 
 Firefox hiện dòng *"Your browser is being managed by your organization"* trong Settings mỗi khi có
 policy, kể cả policy của chính Opz; patch `0057` bỏ dòng đó. Policy đang chạy vẫn xem ở `about:policies`.

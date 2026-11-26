@@ -1,0 +1,431 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 08:28:05 +0700
+Subject: [PATCH] Containers: sync containers and their sites through Sync's
+ settings
+
+Firefox Sync has no container engine. OpzContainerSync writes the containers
+(name, icon, color) and the site-to-container choices into the pref
+opz.containers.sync, which prefs/opz.js marks syncable, so it travels with
+Settings sync; an incoming value is merged back per container and per site,
+newest change first. Removed containers leave a tombstone so they are removed
+on the other devices too. Containers that exist on both sides before the first
+sync are matched by name. Private-tab containers have no identity and are not
+synced; the order of containers is not synced.
+---
+ browser/components/BrowserComponents.manifest |   1 +
+ browser/modules/OpzContainerSync.sys.mjs      | 380 ++++++++++++++++++
+ browser/modules/moz.build                     |   1 +
+ 3 files changed, 382 insertions(+)
+ create mode 100644 browser/modules/OpzContainerSync.sys.mjs
+
+diff --git a/browser/components/BrowserComponents.manifest b/browser/components/BrowserComponents.manifest
+index 42e3bd8379..f1907ed760 100644
+--- a/browser/components/BrowserComponents.manifest
++++ b/browser/components/BrowserComponents.manifest
+@@ -198,6 +198,7 @@ category browser-first-window-ready resource://gre/modules/SandboxUtils.sys.mjs
+ category browser-idle-startup moz-src:///browser/components/places/PlacesUIUtils.sys.mjs PlacesUIUtils.unblockToolbars
+ category browser-idle-startup resource:///modules/BuiltInThemes.sys.mjs BuiltInThemes.ensureBuiltInThemes
+ category browser-idle-startup resource://gre/modules/RFPHelper.sys.mjs RFPHelper.init
++category browser-idle-startup resource:///modules/OpzContainerSync.sys.mjs OpzContainerSync.init
+ category browser-idle-startup resource://gre/modules/Blocklist.sys.mjs Blocklist.loadBlocklistAsync
+ category browser-idle-startup resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs RemoteSecuritySettings.init
+ category browser-idle-startup moz-src:///browser/components/tabbrowser/TabUnloader.sys.mjs TabUnloader.init
+diff --git a/browser/modules/OpzContainerSync.sys.mjs b/browser/modules/OpzContainerSync.sys.mjs
+new file mode 100644
+index 0000000000..ee93db38af
+--- /dev/null
++++ b/browser/modules/OpzContainerSync.sys.mjs
+@@ -0,0 +1,380 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++/**
++ * Opz container sync. Firefox Sync has no engine for containers, but its
++ * prefs engine carries any pref that has a services.sync.prefs.sync.* control
++ * pref. So the containers (name, icon, color) and the "always open this site
++ * in this container" choices are written as JSON into opz.containers.sync,
++ * which travels with Settings sync, and an incoming value is merged back into
++ * ContextualIdentityService.
++ *
++ * Each container gets a random sync id and each entry a change time, so the
++ * newer change wins per container and per site, and a removed container is
++ * kept as a tombstone (removed on the other devices too, with its tabs and
++ * data, as removing it by hand would). Containers that exist on two devices
++ * before their first sync are matched by name. The local view (which sync id
++ * is which userContextId, plus the last known state) lives in
++ * opz.containers.syncLocal, which is not synced.
++ *
++ * Opz private tabs use hidden containers that have no identity, so they are
++ * never synced. The order of containers is not synced.
++ */
++
++import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
++
++const lazy = {};
++ChromeUtils.defineESModuleGetters(lazy, {
++  ContextualIdentityService:
++    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
++});
++
++const SYNC_PREF = "opz.containers.sync";
++const LOCAL_PREF = "opz.containers.syncLocal";
++const ENABLED_PREF = "opz.containers.sync.enabled";
++const TOPICS = [
++  "contextual-identity-created",
++  "contextual-identity-updated",
++  "contextual-identity-deleted",
++  "contextual-identity-site-association-changed",
++];
++const DEBOUNCE_MS = 1000;
++// Tombstones older than this are dropped; a device offline for longer may
++// bring a removed container back.
++const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000;
++// Remote change times further ahead than this are clamped, so a device with a
++// clock far in the future cannot win every later merge.
++const MAX_SKEW_MS = 24 * 60 * 60 * 1000;
++
++function parse(json) {
++  try {
++    let data = JSON.parse(json || "{}");
++    return {
++      c: data.c && typeof data.c == "object" ? data.c : {},
++      s: data.s && typeof data.s == "object" ? data.s : {},
++      u: data.u && typeof data.u == "object" ? data.u : {},
++    };
++  } catch (e) {
++    return { c: {}, s: {}, u: {} };
++  }
++}
++
++// JSON with sorted keys, so the same state always gives the same string and
++// Sync does not upload a change that is not one.
++function stableStringify(value) {
++  if (Array.isArray(value)) {
++    return "[" + value.map(stableStringify).join(",") + "]";
++  }
++  if (value && typeof value == "object") {
++    return (
++      "{" +
++      Object.keys(value)
++        .sort()
++        .map(k => JSON.stringify(k) + ":" + stableStringify(value[k]))
++        .join(",") +
++      "}"
++    );
++  }
++  return JSON.stringify(value);
++}
++
++function newSyncId() {
++  return Services.uuid.generateUUID().toString().slice(1, 13);
++}
++
++export const OpzContainerSync = {
++  _started: false,
++  _applying: false,
++  _timer: null,
++  _lastWritten: null,
++  _now: () => Date.now(),
++
++  get enabled() {
++    return (
++      Services.prefs.getBoolPref(ENABLED_PREF, true) &&
++      Services.prefs.getBoolPref("privacy.userContext.enabled", false)
++    );
++  },
++
++  init() {
++    if (this._started) {
++      return;
++    }
++    this._started = true;
++    for (let topic of TOPICS) {
++      Services.obs.addObserver(this, topic);
++    }
++    Services.prefs.addObserver(SYNC_PREF, this);
++    Services.obs.addObserver(this, "quit-application-granted");
++    this.sync();
++  },
++
++  uninit() {
++    if (!this._started) {
++      return;
++    }
++    this._started = false;
++    clearTimeout(this._timer);
++    for (let topic of TOPICS) {
++      Services.obs.removeObserver(this, topic);
++    }
++    Services.prefs.removeObserver(SYNC_PREF, this);
++    Services.obs.removeObserver(this, "quit-application-granted");
++  },
++
++  observe(subject, topic, data) {
++    if (topic == "quit-application-granted") {
++      if (this._timer) {
++        this.sync();
++      }
++      this.uninit();
++      return;
++    }
++    if (topic == "nsPref:changed") {
++      if (data == SYNC_PREF && !this._applying) {
++        let value = Services.prefs.getStringPref(SYNC_PREF, "");
++        if (value != this._lastWritten) {
++          this.sync();
++        }
++      }
++      return;
++    }
++    this._schedule();
++  },
++
++  _schedule() {
++    clearTimeout(this._timer);
++    this._timer = setTimeout(() => this.sync(), DEBOUNCE_MS);
++  },
++
++  _identities() {
++    let CIS = lazy.ContextualIdentityService;
++    let map = new Map();
++    for (let identity of CIS.getPublicIdentities()) {
++      map.set(identity.userContextId, {
++        n: CIS.getUserContextLabel(identity.userContextId),
++        i: identity.icon,
++        c: identity.color,
++      });
++    }
++    return map;
++  },
++
++  _isUntouchedDefault(userContextId) {
++    let CIS = lazy.ContextualIdentityService;
++    let identity = CIS.getPublicIdentityFromId(userContextId);
++    let original = CIS._defaultIdentities.find(
++      d => d.public && d.userContextId == userContextId
++    );
++    return (
++      !!identity &&
++      !!original &&
++      !identity.name &&
++      identity.icon == original.icon &&
++      identity.color == original.color
++    );
++  },
++
++  // Record local changes (made while Opz was running or not) in `local`.
++  // Containers found on the first scan count as older than anything synced.
++  _scanLocal(local, now, firstScan) {
++    let CIS = lazy.ContextualIdentityService;
++    let identities = this._identities();
++    let sidOf = new Map();
++    for (let [sid, uid] of Object.entries(local.u)) {
++      if (identities.has(uid)) {
++        sidOf.set(uid, sid);
++      } else {
++        delete local.u[sid];
++        if (local.c[sid] && !local.c[sid].d) {
++          local.c[sid] = { d: 1, n: local.c[sid].n, t: now };
++        }
++      }
++    }
++    for (let [uid, attrs] of identities) {
++      let sid = sidOf.get(uid);
++      if (!sid) {
++        sid = newSyncId();
++        local.u[sid] = uid;
++        sidOf.set(uid, sid);
++        local.c[sid] = { ...attrs, t: firstScan ? 0 : now };
++        continue;
++      }
++      let entry = local.c[sid];
++      if (
++        !entry ||
++        entry.d ||
++        entry.n != attrs.n ||
++        entry.i != attrs.i ||
++        entry.c != attrs.c
++      ) {
++        local.c[sid] = { ...attrs, t: now };
++      }
++    }
++
++    let sites = new Map();
++    for (let { site, userContextId } of CIS.getSiteAssociations()) {
++      let sid = sidOf.get(userContextId);
++      if (sid) {
++        sites.set(site, sid);
++      }
++    }
++    for (let [site, sid] of sites) {
++      if (local.s[site]?.s !== sid) {
++        local.s[site] = { s: sid, t: now };
++      }
++    }
++    for (let [site, entry] of Object.entries(local.s)) {
++      if (entry.s && !sites.has(site)) {
++        local.s[site] = { s: null, t: now };
++      }
++    }
++  },
++
++  // Merge `remote` into `local`, changing the containers to match.
++  async _merge(local, remote, now) {
++    let CIS = lazy.ContextualIdentityService;
++    for (let [sid, remoteEntry] of Object.entries(remote.c)) {
++      if (
++        !remoteEntry ||
++        typeof remoteEntry.t != "number" ||
++        (!remoteEntry.d && !remoteEntry.n?.trim())
++      ) {
++        continue;
++      }
++      let entry = {
++        ...remoteEntry,
++        t: Math.min(remoteEntry.t, now + MAX_SKEW_MS),
++      };
++      let mine = local.c[sid];
++      if (!mine) {
++        // Same name on both sides before they ever synced: one container. A
++        // removal only takes a twin that is an untouched default container.
++        let twin =
++          entry.n &&
++          Object.keys(local.c).find(
++            other =>
++              !(other in remote.c) &&
++              !local.c[other].d &&
++              local.c[other].n == entry.n &&
++              other in local.u &&
++              (!entry.d || this._isUntouchedDefault(local.u[other]))
++          );
++        if (!twin && entry.d) {
++          local.c[sid] = { d: 1, n: entry.n, t: entry.t };
++          continue;
++        }
++        if (twin) {
++          local.u[sid] = local.u[twin];
++          delete local.u[twin];
++          let older = local.c[twin];
++          delete local.c[twin];
++          for (let site of Object.values(local.s)) {
++            if (site.s == twin) {
++              site.s = sid;
++            }
++          }
++          mine = local.c[sid] = older;
++        } else {
++          let identity = CIS.create(entry.n, entry.i, entry.c);
++          local.u[sid] = identity.userContextId;
++          local.c[sid] = { n: entry.n, i: entry.i, c: entry.c, t: entry.t };
++          continue;
++        }
++      }
++      if (entry.t <= mine.t) {
++        continue;
++      }
++      let uid = local.u[sid];
++      if (entry.d) {
++        if (uid) {
++          await CIS.closeContainerTabs(uid);
++          CIS.remove(uid);
++          delete local.u[sid];
++        }
++        local.c[sid] = { d: 1, n: entry.n, t: entry.t };
++      } else if (uid) {
++        CIS.update(uid, entry.n, entry.i, entry.c);
++        local.c[sid] = { n: entry.n, i: entry.i, c: entry.c, t: entry.t };
++      } else {
++        // Removed here, changed there later: it comes back.
++        let identity = CIS.create(entry.n, entry.i, entry.c);
++        local.u[sid] = identity.userContextId;
++        local.c[sid] = { n: entry.n, i: entry.i, c: entry.c, t: entry.t };
++      }
++    }
++
++    for (let [site, remoteEntry] of Object.entries(remote.s)) {
++      if (!remoteEntry || typeof remoteEntry.t != "number") {
++        continue;
++      }
++      let entry = {
++        ...remoteEntry,
++        t: Math.min(remoteEntry.t, now + MAX_SKEW_MS),
++      };
++      let mine = local.s[site];
++      if (mine && entry.t <= mine.t) {
++        continue;
++      }
++      let uid = entry.s && local.u[entry.s];
++      try {
++        if (uid) {
++          CIS.setSiteAssociation(site, uid);
++        } else if (CIS.getSiteAssociation(site)) {
++          CIS.removeSiteAssociation(site);
++        }
++      } catch (e) {
++        console.error("Opz container sync: site", site, e);
++      }
++      local.s[site] = { s: uid ? entry.s : null, t: entry.t };
++    }
++  },
++
++  _prune(local, now) {
++    for (let [sid, entry] of Object.entries(local.c)) {
++      if (entry.d && now - entry.t > TOMBSTONE_MS) {
++        delete local.c[sid];
++      }
++    }
++    for (let [site, entry] of Object.entries(local.s)) {
++      if (!entry.s && now - entry.t > TOMBSTONE_MS) {
++        delete local.s[site];
++      }
++    }
++  },
++
++  async sync() {
++    clearTimeout(this._timer);
++    this._timer = null;
++    if (!this.enabled) {
++      return;
++    }
++    if (this._applying) {
++      this._schedule();
++      return;
++    }
++    this._applying = true;
++    try {
++      lazy.ContextualIdentityService.ensureDataReady();
++      let now = this._now();
++      let firstScan = !Services.prefs.prefHasUserValue(LOCAL_PREF);
++      let local = parse(Services.prefs.getStringPref(LOCAL_PREF, ""));
++      this._scanLocal(local, now, firstScan);
++      let remote = parse(Services.prefs.getStringPref(SYNC_PREF, ""));
++      await this._merge(local, remote, now);
++      this._prune(local, now);
++
++      Services.prefs.setStringPref(LOCAL_PREF, stableStringify(local));
++      let shared = stableStringify({ v: 1, c: local.c, s: local.s });
++      this._lastWritten = shared;
++      if (Services.prefs.getStringPref(SYNC_PREF, "") != shared) {
++        Services.prefs.setStringPref(SYNC_PREF, shared);
++      }
++    } catch (e) {
++      console.error("Opz container sync:", e);
++    } finally {
++      this._applying = false;
++    }
++  },
++};
+diff --git a/browser/modules/moz.build b/browser/modules/moz.build
+index bb2ea0bf02..4370492852 100644
+--- a/browser/modules/moz.build
++++ b/browser/modules/moz.build
+@@ -133,6 +133,7 @@ EXTRA_JS_MODULES += [
+     "LaterRun.sys.mjs",
+     "LinksCache.sys.mjs",
+     "MenuSectionLayout.sys.mjs",
++    "OpzContainerSync.sys.mjs",
+     "OpzPrivateTabs.sys.mjs",
+     "PageActions.sys.mjs",
+     "PermissionPromptTargeting.sys.mjs",

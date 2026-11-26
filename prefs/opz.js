@@ -196,3 +196,9 @@ pref("browser.tabs.hoverPreview.showThumbnails", false);
 // Do not record page interactions (view time, scrolling, typing) in
 // places.sqlite for every page; Opz has no feature that reads them.
 pref("browser.places.interactions.enabled", false);
+
+// --- Containers travel with Sync (Settings) through this pref ---------------
+// OpzContainerSync writes the containers and site choices into
+// opz.containers.sync; the control pref makes the Sync prefs engine carry it.
+pref("opz.containers.sync", "");
+pref("services.sync.prefs.sync.opz.containers.sync", true);
