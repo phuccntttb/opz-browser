@@ -10,6 +10,11 @@ export XUL_APP_FILE="$OPZ_OBJDIR/dist/bin/browser/application.ini"
 if [ "$OPZ_OS" = win ]; then
     XUL_APP_FILE="$(cygpath -w "$XUL_APP_FILE")"   # firefox.exe wants C:\...
 fi
+# Web app desktop entries (patch 0059) run MOZ_APP_LAUNCHER; without it they
+# would start the bare binary, which is not Opz.
+if [ "$OPZ_OS" = linux ]; then
+    export MOZ_APP_LAUNCHER="$OPZ_ROOT/scripts/dev-launcher.sh"
+fi
 # -purgecaches: "build.sh faster" keeps the same build ID, so without it the
 # profile's startup cache can keep running the old browser code.
 exec ./mach run -purgecaches "$@"
