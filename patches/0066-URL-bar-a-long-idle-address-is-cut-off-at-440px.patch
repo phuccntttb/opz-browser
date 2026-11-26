@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 17:44:53 +0700
+Subject: [PATCH] URL bar: a long idle address is cut off at 440px
+
+The idle address grew with its text up to the width cap of the bar
+(100vw - 640px), so a long address stretched across the toolbar. Its
+text box now stops at 440px and the rest fades out as usual.
+---
+ browser/themes/shared/urlbar.css | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 3fe20da557..261ca5d732 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1684,6 +1684,12 @@ toolbar[inactive="true"] .urlbar,
+   > .urlbar-input-container > .urlbar-input-box > #urlbar-input {
+     field-sizing: content;
+   }
++
++  /* A long address is cut off (with the usual fade) rather than stretching
++     the bar across the toolbar. */
++  > .urlbar-input-container > .urlbar-input-box {
++    max-width: 440px;
++  }
+ }
+ 
+ /* Opz: the address bar's container spans the toolbar, but while idle the bar
