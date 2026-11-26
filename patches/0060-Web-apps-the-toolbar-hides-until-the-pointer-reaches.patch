@@ -6,13 +6,15 @@ Subject: [PATCH] Web apps: the toolbar hides until the pointer reaches the top
 
 In web app windows the toolbar slides down over the page on hover and
 hides again when the pointer leaves, unless the address bar is in use or
-a popup opened from the toolbar is showing. A checkbox in the toolbar
+a popup opened from the toolbar is showing. The page card then has the
+same gap at the top as on the other sides. A checkbox in the toolbar
 context menu (opz.webapp.autoHideToolbar) keeps it always shown.
 ---
- browser/base/content/main-popupset.js        | 72 +++++++++++++++++++-
- browser/locales/en-US/browser/tabbrowser.ftl |  3 +
- browser/themes/shared/browser-shared.css     | 32 +++++++++
- 3 files changed, 105 insertions(+), 2 deletions(-)
+ browser/base/content/main-popupset.js         | 72 ++++++++++++++++++-
+ browser/locales/en-US/browser/tabbrowser.ftl  |  3 +
+ browser/themes/shared/browser-shared.css      | 32 +++++++++
+ .../themes/shared/tabbrowser/content-area.css |  5 ++
+ 4 files changed, 110 insertions(+), 2 deletions(-)
 
 diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
 index ea31a7ce48..35ffe70060 100644
@@ -156,3 +158,19 @@ index 368c691115..2d9f22dd58 100644
 +    transition-property: opacity;
 +  }
 +}
+diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
+index 925685df80..cdf632c987 100644
+--- a/browser/themes/shared/tabbrowser/content-area.css
++++ b/browser/themes/shared/tabbrowser/content-area.css
+@@ -634,6 +634,11 @@
+       margin-inline-end: 0;
+     }
+ 
++    /* Web app windows with the toolbar hidden: the same gap at the top. */
++    :root[taskbartab][opz-autohide-toolbar]:not([inFullscreen]) & {
++      margin-block-start: var(--opz-content-gap);
++    }
++
+     @media (-moz-platform: macos) {
+       --content-scrollbar-inset-block: var(--border-radius-medium) !important;
+       --content-scrollbar-inset-inline-start: var(--border-radius-medium) !important;
