@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 16:52:50 +0700
+Subject: [PATCH] URL bar: the loading line runs under the address only
+
+The light that sweeps while the page loads is drawn on .urlbar-input-box
+instead of the whole idle bar, so it is as wide as the address and not
+the icons beside it.
+---
+ browser/themes/shared/urlbar.css | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 7ad6cb38a4..3fe20da557 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1883,13 +1883,13 @@ toolbar[inactive="true"] .urlbar,
+ /* Opz: while the page in the current tab loads (the reload button shows
+  * stop), a light sweeps along a thin line under the idle address. It is in
+  * the address bar's text color, so it follows the theme. */
+-:root:has(#reload-button[displaystop]) #urlbar:not([open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) > .urlbar-input-container {
++:root:has(#reload-button[displaystop]) #urlbar:not([open], [popover-open], [usertyping][focused], [searchmode], [opz-keepopen]):is(:not([focused]), [context-focus]) > .urlbar-input-container > .urlbar-input-box {
+   position: relative;
+ 
+   &::after {
+     content: "";
+     position: absolute;
+-    inset-inline: 10px;
++    inset-inline: 0;
+     bottom: 1px;
+     height: 2px;
+     border-radius: 1px;
+@@ -1910,7 +1910,7 @@ toolbar[inactive="true"] .urlbar,
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  :root:has(#reload-button[displaystop]) #urlbar > .urlbar-input-container::after {
++  :root:has(#reload-button[displaystop]) #urlbar > .urlbar-input-container > .urlbar-input-box::after {
+     background: currentColor;
+     animation: opz-urlbar-loading-pulse 1.4s ease-in-out infinite alternate;
+   }
