@@ -39,6 +39,8 @@ Chạy sau mỗi lần build lớn hoặc nâng cấp Firefox:
   và app có trong menu ứng dụng; đóng rồi mở lại từ menu; bấm lại nút trong cửa sổ app → app bị gỡ. Trong cửa sổ app thanh công cụ ẩn,
   rê lên mép trên thì hiện, rời chuột thì ẩn; Ctrl+L giữ nó hiện. Cửa sổ thường: bấm phải chỗ
   trống trên thanh → tích "Show toolbar only on hover" thì cũng ẩn như vậy.
+  Trong app Gmail mở cửa sổ popout chat → nó nằm chung icon app trên dock; bấm thông báo
+  Gmail → về cửa sổ app.
 - [ ] **Không đụng tới Firefox:** không có thư mục mới trong `~/.config/mozilla/firefox`.
 
 [← Mục lục](../README.md)

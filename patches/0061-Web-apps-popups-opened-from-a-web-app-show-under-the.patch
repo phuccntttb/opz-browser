@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 16:03:19 +0700
+Subject: [PATCH] Web apps: popups opened from a web app show under the app in
+ the dock
+
+A popup window opened from a web app window (or from one of its popups)
+takes the app's window class, read in onBeforeInitialXULLayout from the
+opener in the window's initialOpenWindowInfo.
+---
+ browser/base/content/browser-init.js | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 5c16ea235b..b8cb92002b 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -190,6 +190,27 @@ var gBrowserInit = {
+       }
+     }
+ 
++    // Opz: a popup opened from a web app window (or from one of its popups)
++    // takes the app's window class, so the dock shows it under the app.
++    if (!document.documentElement.hasAttribute("windowclass")) {
++      try {
++        let opener = window.docShell.treeOwner
++          .QueryInterface(Ci.nsIInterfaceRequestor)
++          .getInterface(Ci.nsIAppWindow).initialOpenWindowInfo?.parent
++          ?.topChromeWindow?.document.documentElement;
++        let appId =
++          opener?.getAttribute("taskbartab") ||
++          opener?.getAttribute("opz-webapp-popup");
++        if (appId && opener.hasAttribute("windowclass")) {
++          document.documentElement.setAttribute(
++            "windowclass",
++            opener.getAttribute("windowclass")
++          );
++          document.documentElement.setAttribute("opz-webapp-popup", appId);
++        }
++      } catch (e) {}
++    }
++
+     let tabToAdopt = this.getTabToAdopt();
+     if (tabToAdopt?.hasAttribute?.("mini-window")) {
+       document.documentElement.setAttribute("mini-window", "true");
