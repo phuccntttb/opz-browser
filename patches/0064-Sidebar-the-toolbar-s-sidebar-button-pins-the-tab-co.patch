@@ -4,25 +4,27 @@ Date: Thu, 26 Nov 2026 16:59:17 +0700
 Subject: [PATCH] Sidebar: the toolbar's sidebar button pins the tab column
  open
 
-Firefox's sidebar button is back at the start of the nav-bar (older
-profiles get it once, opz.customizableui.sidebarButtonRestored). With
-vertical tabs a click pins the column open (sidebar.visibility =
+Firefox's sidebar button is back on the nav-bar, after the reload button
+(older profiles get it there once, opz.customizableui.sidebarButtonRestoredV2).
+With vertical tabs a click pins the column open (sidebar.visibility =
 always-show) and a second click unpins and collapses it
 (expand-on-hover); the button is checked while pinned. It replaces the pin
 button at the bottom of the column and the Turn off auto-collapse item in
-the tab context menu.
+the tab context menu. The toolbar buttons' round backgrounds are 28px with
+2px above and below, and the first one is 10px from the window edge, like
+the close button on the other side.
 ---
- .../customizableui/CustomizableUI.sys.mjs     | 24 ++++++-
+ .../customizableui/CustomizableUI.sys.mjs     | 33 ++++++++-
  browser/components/sidebar/browser-sidebar.js | 14 +++-
  browser/components/sidebar/sidebar-main.css   | 13 ++--
  browser/components/sidebar/sidebar-main.mjs   | 68 +++++++------------
  .../tabbrowser/content/tab-context-menu.js    | 28 ++------
  browser/locales/en-US/browser/tabbrowser.ftl  |  3 -
- browser/themes/shared/toolbarbuttons.css      |  4 +-
- 7 files changed, 71 insertions(+), 83 deletions(-)
+ browser/themes/shared/toolbarbuttons.css      | 14 +++-
+ 7 files changed, 90 insertions(+), 83 deletions(-)
 
 diff --git a/browser/components/customizableui/CustomizableUI.sys.mjs b/browser/components/customizableui/CustomizableUI.sys.mjs
-index f316b6a254..8fcc89718c 100644
+index f316b6a254..d340dad5e8 100644
 --- a/browser/components/customizableui/CustomizableUI.sys.mjs
 +++ b/browser/components/customizableui/CustomizableUI.sys.mjs
 @@ -79,7 +79,10 @@ const kPrefOpzAllTabsButtonRemoved =
@@ -33,36 +35,48 @@ index f316b6a254..8fcc89718c 100644
 +const kOpzRemovedNavBarButtons = ["new-tab-button"];
 +// Opz: the sidebar button came back as the toggle for pinning the tab column.
 +const kPrefOpzSidebarButtonRestored =
-+  "opz.customizableui.sidebarButtonRestored";
++  "opz.customizableui.sidebarButtonRestoredV2";
  
  /**
   * Buttons removed from built-ins by version they were removed. kVersion must be
-@@ -369,8 +372,8 @@ var CustomizableUIInternal = {
+@@ -369,11 +372,11 @@ var CustomizableUIInternal = {
      );
  
      let navbarPlacements = [
 -      // Opz: no sidebar button; the tab column expands on hover and the
 -      // panels open from View > Sidebar or their keyboard shortcuts.
-+      // Opz: the sidebar button pins the tab column open and unpins it.
-+      "sidebar-button",
        "back-button",
        "forward-button",
        "stop-reload-button",
-@@ -1120,6 +1123,21 @@ var CustomizableUIInternal = {
++      // Opz: the sidebar button pins the tab column open and unpins it.
++      "sidebar-button",
+       Services.policies.isAllowed("removeHomeButtonByDefault")
+         ? null
+         : "home-button",
+@@ -1120,6 +1123,30 @@ var CustomizableUIInternal = {
        Services.prefs.setBoolPref(kPrefOpzNavBarButtonsRemoved, true);
      }
  
-+    // Opz: put the sidebar button back at the start of older profiles'
-+    // nav-bar (patch 0019 took it off), once.
++    // Opz: put the sidebar button back after the reload button on older
++    // profiles' nav-bar (patch 0019 took it off; Firefox puts it first),
++    // once.
 +    if (!Services.prefs.getBoolPref(kPrefOpzSidebarButtonRestored, false)) {
 +      let navbar = gSavedState.placements?.[CustomizableUI.AREA_NAVBAR];
-+      if (
-+        Array.isArray(navbar) &&
-+        !Object.values(gSavedState.placements).some(
-+          ids => Array.isArray(ids) && ids.includes("sidebar-button")
-+        )
-+      ) {
-+        navbar.unshift("sidebar-button");
++      if (Array.isArray(navbar)) {
++        let elsewhere = Object.entries(gSavedState.placements).some(
++          ([area, ids]) =>
++            area != CustomizableUI.AREA_NAVBAR &&
++            Array.isArray(ids) &&
++            ids.includes("sidebar-button")
++        );
++        let index = navbar.indexOf("sidebar-button");
++        if (!elsewhere && index <= 0) {
++          if (index == 0) {
++            navbar.shift();
++          }
++          let reload = navbar.indexOf("stop-reload-button");
++          navbar.splice(reload + 1, 0, "sidebar-button");
++        }
 +      }
 +      Services.prefs.setBoolPref(kPrefOpzSidebarButtonRestored, true);
 +    }
@@ -295,7 +309,7 @@ index 72cc6dbc90..a15bbdf92b 100644
  ## Opz: toolbar context menu, on its empty space
  
 diff --git a/browser/themes/shared/toolbarbuttons.css b/browser/themes/shared/toolbarbuttons.css
-index 99e3828127..2af7555528 100644
+index 99e3828127..48d3f37eb9 100644
 --- a/browser/themes/shared/toolbarbuttons.css
 +++ b/browser/themes/shared/toolbarbuttons.css
 @@ -845,7 +845,7 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
@@ -316,3 +330,17 @@ index 99e3828127..2af7555528 100644
      & #back-button,
      & #forward-button,
      & #stop-reload-button,
+@@ -912,3 +912,13 @@ toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
+     }
+   }
+ }
++
++/* Opz: the toolbar buttons' round backgrounds keep clear of the window edge,
++ * like the window buttons: 28px instead of filling the 32px toolbar, and the
++ * first button as far from the left edge as the close button is from the
++ * right one. */
++:root:not([customizing]) #nav-bar {
++  --toolbarbutton-padding-inner: 6px;
++  padding-block: 2px;
++  padding-inline-start: 4px;
++}
