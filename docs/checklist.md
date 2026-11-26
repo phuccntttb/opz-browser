@@ -37,7 +37,8 @@ Chạy sau mỗi lần build lớn hoặc nâng cấp Firefox:
 - [ ] **DRM:** phát một video DRM (bật DRM khi được hỏi).
 - [ ] **Web app (Linux):** mở Gmail, bấm nút "Add tab to taskbar" ở ô URL → có cửa sổ app riêng
   và app có trong menu ứng dụng; đóng rồi mở lại từ menu; bấm lại nút trong cửa sổ app → app bị gỡ. Trong cửa sổ app thanh công cụ ẩn,
-  rê lên mép trên thì hiện, rời chuột thì ẩn; Ctrl+L giữ nó hiện.
+  rê lên mép trên thì hiện, rời chuột thì ẩn; Ctrl+L giữ nó hiện. Cửa sổ thường: bấm phải chỗ
+  trống trên thanh → tích "Show toolbar only on hover" thì cũng ẩn như vậy.
 - [ ] **Không đụng tới Firefox:** không có thư mục mới trong `~/.config/mozilla/firefox`.
 
 [← Mục lục](../README.md)

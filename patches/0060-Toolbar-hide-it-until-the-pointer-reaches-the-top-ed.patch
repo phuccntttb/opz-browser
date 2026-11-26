@@ -1,49 +1,73 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Opz Browser <opz@localhost>
 Date: Thu, 26 Nov 2026 14:47:46 +0700
-Subject: [PATCH] Web apps: the toolbar hides until the pointer reaches the top
- edge
+Subject: [PATCH] Toolbar: hide it until the pointer reaches the top edge
 
-In web app windows the toolbar slides down over the page on hover and
-hides again when the pointer leaves, unless the address bar is in use or
-a popup opened from the toolbar is showing. The page card then has the
-same gap at the top as on the other sides. A checkbox in the toolbar
-context menu (opz.webapp.autoHideToolbar) keeps it always shown.
+The toolbar can slide down over the page on hover and hide again when the
+pointer leaves, unless the address bar is in use or a popup opened from
+the toolbar is showing. The page card then has the same gap at the top as
+on the other sides. A checkbox in the toolbar context menu turns it on or
+off: opz.webapp.autoHideToolbar for web app windows (on by default) and
+opz.toolbar.autoHide for browser windows (off by default).
 ---
- browser/base/content/main-popupset.js         | 72 ++++++++++++++++++-
+ browser/base/content/main-popupset.js         | 96 ++++++++++++++++++-
  browser/locales/en-US/browser/tabbrowser.ftl  |  3 +
- browser/themes/shared/browser-shared.css      | 32 +++++++++
- .../themes/shared/tabbrowser/content-area.css |  5 ++
- 4 files changed, 110 insertions(+), 2 deletions(-)
+ browser/themes/shared/browser-shared.css      | 32 +++++++
+ .../themes/shared/tabbrowser/content-area.css |  5 +
+ 4 files changed, 134 insertions(+), 2 deletions(-)
 
 diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
-index ea31a7ce48..35ffe70060 100644
+index ea31a7ce48..37319addf3 100644
 --- a/browser/base/content/main-popupset.js
 +++ b/browser/base/content/main-popupset.js
-@@ -806,8 +806,76 @@ window.addEventListener(
+@@ -806,8 +806,100 @@ window.addEventListener(
    { once: true }
  );
  
-+// Opz: web app windows hide the toolbar until the pointer reaches the top
-+// edge (CSS in browser-shared.css). It stays out while a popup opened from
-+// it is showing, since the pointer then leaves the toolbar.
-+const OPZ_WEBAPP_AUTOHIDE_PREF = "opz.webapp.autoHideToolbar";
++// Opz: the toolbar can hide until the pointer reaches the top edge (CSS in
++// browser-shared.css), with one pref for web app windows (on by default) and
++// one for browser windows (off by default). Both are mirrored on the root
++// element so the CSS does not depend on when [taskbartab] is set. The toolbar
++// stays out while a popup opened from it is showing, since the pointer then
++// leaves the toolbar.
++const OPZ_AUTOHIDE = [
++  {
++    pref: "opz.webapp.autoHideToolbar",
++    attr: "opz-autohide-toolbar",
++    fallback: true,
++  },
++  {
++    pref: "opz.toolbar.autoHide",
++    attr: "opz-autohide-browser-toolbar",
++    fallback: false,
++  },
++];
 +
-+function opzSyncWebAppAutoHide() {
-+  document.documentElement.toggleAttribute(
-+    "opz-autohide-toolbar",
-+    Services.prefs.getBoolPref(OPZ_WEBAPP_AUTOHIDE_PREF, true)
-+  );
++function opzAutoHideFor(win) {
++  return OPZ_AUTOHIDE[
++    win.document.documentElement.hasAttribute("taskbartab") ? 0 : 1
++  ];
 +}
-+opzSyncWebAppAutoHide();
-+Services.prefs.addObserver(OPZ_WEBAPP_AUTOHIDE_PREF, opzSyncWebAppAutoHide);
++
++function opzSyncAutoHide() {
++  for (let { pref, attr, fallback } of OPZ_AUTOHIDE) {
++    document.documentElement.toggleAttribute(
++      attr,
++      Services.prefs.getBoolPref(pref, fallback)
++    );
++  }
++}
++opzSyncAutoHide();
++for (let { pref } of OPZ_AUTOHIDE) {
++  Services.prefs.addObserver(pref, opzSyncAutoHide);
++}
 +window.addEventListener(
 +  "unload",
-+  () =>
-+    Services.prefs.removeObserver(
-+      OPZ_WEBAPP_AUTOHIDE_PREF,
-+      opzSyncWebAppAutoHide
-+    ),
++  () => {
++    for (let { pref } of OPZ_AUTOHIDE) {
++      Services.prefs.removeObserver(pref, opzSyncAutoHide);
++    }
++  },
 +  { once: true }
 +);
 +
@@ -80,16 +104,16 @@ index ea31a7ce48..35ffe70060 100644
 +    document.l10n.setAttributes(autoHideItem, "opz-webapp-toolbar-on-hover");
 +    autoHideItem.addEventListener("command", () =>
 +      Services.prefs.setBoolPref(
-+        OPZ_WEBAPP_AUTOHIDE_PREF,
++        opzAutoHideFor(window).pref,
 +        autoHideItem.hasAttribute("checked")
 +      )
 +    );
 +    popup.append(autoHideItem);
 +  }
-+  autoHideItem.hidden = !document.documentElement.hasAttribute("taskbartab");
++  let { pref, fallback } = opzAutoHideFor(window);
 +  autoHideItem.toggleAttribute(
 +    "checked",
-+    Services.prefs.getBoolPref(OPZ_WEBAPP_AUTOHIDE_PREF, true)
++    Services.prefs.getBoolPref(pref, fallback)
 +  );
 +
 +  let item = popup.querySelector(
@@ -98,7 +122,7 @@ index ea31a7ce48..35ffe70060 100644
    if (!item) {
      item = document.createXULElement("menuitem");
      item.className = "opz-toolbar-option";
-@@ -820,7 +888,7 @@ function opzUpdateToolbarOptions(popup) {
+@@ -820,7 +912,7 @@ function opzUpdateToolbarOptions(popup) {
          !item.hasAttribute("checked")
        )
      );
@@ -119,7 +143,7 @@ index 734e9b3aca..72cc6dbc90 100644
 +    .label = Show toolbar only on hover
 +    .accesskey = t
 diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
-index 368c691115..2d9f22dd58 100644
+index 368c691115..005d5d18fc 100644
 --- a/browser/themes/shared/browser-shared.css
 +++ b/browser/themes/shared/browser-shared.css
 @@ -1695,3 +1695,35 @@ popupnotificationcontent {
@@ -127,11 +151,11 @@ index 368c691115..2d9f22dd58 100644
    display: none !important;
  }
 +
-+/* Opz: web app windows can hide the toolbar until the pointer reaches the
++/* Opz: web app and browser windows can hide the toolbar until the pointer reaches the
 + * top edge; it then slides down over the page. It stays while the address
 + * bar is in use or a popup opened from it is showing (opz-toolbar-reveal,
 + * main-popupset.js). */
-+:root[taskbartab][opz-autohide-toolbar]:not([inFullscreen]) #navigator-toolbox {
++:root:is([taskbartab][opz-autohide-toolbar], :not([taskbartab], [popup-window])[opz-autohide-browser-toolbar]):not([inFullscreen]) #navigator-toolbox {
 +  position: fixed;
 +  inset-inline: 0;
 +  top: 0;
@@ -159,15 +183,15 @@ index 368c691115..2d9f22dd58 100644
 +  }
 +}
 diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
-index 925685df80..cdf632c987 100644
+index 925685df80..6214f22dd7 100644
 --- a/browser/themes/shared/tabbrowser/content-area.css
 +++ b/browser/themes/shared/tabbrowser/content-area.css
 @@ -634,6 +634,11 @@
        margin-inline-end: 0;
      }
  
-+    /* Web app windows with the toolbar hidden: the same gap at the top. */
-+    :root[taskbartab][opz-autohide-toolbar]:not([inFullscreen]) & {
++    /* With the toolbar hidden (browser-shared.css): the same gap at the top. */
++    :root:is([taskbartab][opz-autohide-toolbar], :not([taskbartab], [popup-window])[opz-autohide-browser-toolbar]):not([inFullscreen]) & {
 +      margin-block-start: var(--opz-content-gap);
 +    }
 +

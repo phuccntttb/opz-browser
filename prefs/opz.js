@@ -206,3 +206,5 @@ pref("services.sync.prefs.sync.opz.containers.sync", true);
 // --- Web apps (Linux: patch 0059) -------------------------------------------
 // Web app windows hide the toolbar until the pointer reaches the top edge.
 pref("opz.webapp.autoHideToolbar", true);
+// Browser windows can do the same (toolbar context menu); off by default.
+pref("opz.toolbar.autoHide", false);
