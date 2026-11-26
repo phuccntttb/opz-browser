@@ -1,26 +1,26 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Opz Browser <opz@localhost>
 Date: Thu, 26 Nov 2026 16:03:19 +0700
-Subject: [PATCH] Web apps: popups opened from a web app show under the app in
- the dock
+Subject: [PATCH] Web apps: popups opened from a web app show under the app
 
 A popup window opened from a web app window (or from one of its popups)
-takes the app's window class, read in onBeforeInitialXULLayout from the
-opener in the window's initialOpenWindowInfo.
+is read in onBeforeInitialXULLayout from the opener in the window's
+initialOpenWindowInfo. It takes the app's window class (Linux dock) or
+the app's AppUserModelID (Windows taskbar), like the app's own windows.
 ---
- browser/base/content/browser-init.js | 21 +++++++++++++++++++++
- 1 file changed, 21 insertions(+)
+ browser/base/content/browser-init.js | 34 ++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
 
 diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
-index 5c16ea235b..b8cb92002b 100644
+index 5c16ea235b..476188baba 100644
 --- a/browser/base/content/browser-init.js
 +++ b/browser/base/content/browser-init.js
-@@ -190,6 +190,27 @@ var gBrowserInit = {
+@@ -190,6 +190,40 @@ var gBrowserInit = {
        }
      }
  
 +    // Opz: a popup opened from a web app window (or from one of its popups)
-+    // takes the app's window class, so the dock shows it under the app.
++    // shows under the app in the dock or taskbar.
 +    if (!document.documentElement.hasAttribute("windowclass")) {
 +      try {
 +        let opener = window.docShell.treeOwner
@@ -30,12 +30,25 @@ index 5c16ea235b..b8cb92002b 100644
 +        let appId =
 +          opener?.getAttribute("taskbartab") ||
 +          opener?.getAttribute("opz-webapp-popup");
++        if (appId) {
++          document.documentElement.setAttribute("opz-webapp-popup", appId);
++        }
 +        if (appId && opener.hasAttribute("windowclass")) {
 +          document.documentElement.setAttribute(
 +            "windowclass",
 +            opener.getAttribute("windowclass")
 +          );
-+          document.documentElement.setAttribute("opz-webapp-popup", appId);
++        }
++        // Windows groups taskbar buttons by AppUserModelID instead; use the
++        // one TaskbarTabsWindowManager gives the app's own windows.
++        if (appId && AppConstants.platform == "win") {
++          let pfn = Services.sysinfo.getProperty("winPackageFamilyName");
++          Cc["@mozilla.org/windows-taskbar;1"]
++            .getService(Ci.nsIWinTaskbar)
++            .setGroupIdForWindow(
++              window,
++              pfn ? `${pfn}!App:taskbartab-${appId}` : appId
++            );
 +        }
 +      } catch (e) {}
 +    }
