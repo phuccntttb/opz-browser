@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 16:35:38 +0700
+Subject: [PATCH] URL bar: the idle address itself sits in the middle of the
+ window
+
+The idle bar was centered with the icons on its two sides, which differ in
+width (and hidden ones keep their place), so the address sat off-center.
+main-popupset.js measures both sides with a ResizeObserver on every part
+of the bar and shifts it by half the difference.
+---
+ browser/base/content/main-popupset.js | 30 +++++++++++++++++++++++++++
+ browser/themes/shared/urlbar.css      |  4 +++-
+ 2 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index 3be5a87d27..cc90708252 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -885,6 +885,36 @@ window.addEventListener(
+   { once: true }
+ );
+ 
++// Opz: the idle address bar is fixed to the middle of the window
++// (urlbar.css), but the icons on its two sides differ in width, and hidden
++// ones keep their place. Shift it so the address itself is in the middle.
++window.addEventListener(
++  "load",
++  () => {
++    let urlbar = document.getElementById("urlbar");
++    let inputBox = urlbar?.querySelector(".urlbar-input-box");
++    if (!inputBox) {
++      return;
++    }
++    let update = () => {
++      let bar = urlbar.getBoundingClientRect();
++      let input = inputBox.getBoundingClientRect();
++      let left = input.left - bar.left;
++      let right = bar.right - input.right;
++      urlbar.style.setProperty(
++        "--opz-urlbar-center-shift",
++        `${(right - left) / 2}px`
++      );
++    };
++    let observer = new ResizeObserver(update);
++    observer.observe(urlbar);
++    for (let child of inputBox.parentElement.children) {
++      observer.observe(child);
++    }
++  },
++  { once: true }
++);
++
+ const opzToolbarPopups = new Set();
+ function opzTrackToolbarPopup(event) {
+   let popup = event.target;
+diff --git a/browser/themes/shared/urlbar.css b/browser/themes/shared/urlbar.css
+index 7eb671679f..7ad6cb38a4 100644
+--- a/browser/themes/shared/urlbar.css
++++ b/browser/themes/shared/urlbar.css
+@@ -1668,7 +1668,9 @@ toolbar[inactive="true"] .urlbar,
+   @media (width >= 900px) {
+     position: fixed;
+     left: 50%;
+-    translate: -50% 0;
++    /* --opz-urlbar-center-shift (main-popupset.js) puts the address, not the
++       bar with its icons, in the middle. */
++    translate: calc(-50% + var(--opz-urlbar-center-shift, 0px)) 0;
+     max-width: calc(100vw - 640px);
+   }
+ 
