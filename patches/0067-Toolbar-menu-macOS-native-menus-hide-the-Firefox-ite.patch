@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 18:56:32 +0700
+Subject: [PATCH] Toolbar menu: macOS native menus hide the Firefox items too
+
+---
+ browser/base/content/main-popupset.js | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index 136d119baf..453e4de3b4 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -660,6 +660,7 @@ document.addEventListener(
+               ".webextension-browser-action, .unified-extensions-item, #unified-extensions-button"
+             )
+           );
++          opzHideToolbarMenuItems(event.target);
+           if (event.target.hasAttribute("opz-toolbar-options")) {
+             opzUpdateToolbarOptions(event.target);
+             break;
+@@ -959,6 +960,27 @@ function opzTrackToolbarPopup(event) {
+ window.addEventListener("popupshown", opzTrackToolbarPopup);
+ window.addEventListener("popuphidden", opzTrackToolbarPopup);
+ 
++// The CSS rule in toolbarbuttons.css does not reach macOS native menus, which
++// only follow the hidden attribute. Hide the same items with it, and give back
++// the upstream items before upstream code decides which of them to show.
++function opzHideToolbarMenuItems(popup) {
++  let optionsOnly = popup.hasAttribute("opz-toolbar-options");
++  for (let child of popup.children) {
++    let isOption = child.classList.contains("opz-toolbar-option");
++    if (isOption) {
++      child.hidden = !optionsOnly;
++    } else if (optionsOnly) {
++      if (!child.hidden) {
++        child.hidden = true;
++        child.setAttribute("opz-hidden-for-options", "true");
++      }
++    } else if (child.hasAttribute("opz-hidden-for-options")) {
++      child.removeAttribute("opz-hidden-for-options");
++      child.hidden = false;
++    }
++  }
++}
++
+ function opzUpdateToolbarOptions(popup) {
+   let autoHideItem = popup.querySelector(".opz-webapp-toolbar-option");
+   if (!autoHideItem) {
