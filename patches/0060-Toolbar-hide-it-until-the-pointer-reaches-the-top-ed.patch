@@ -6,21 +6,21 @@ Subject: [PATCH] Toolbar: hide it until the pointer reaches the top edge
 The toolbar can slide down over the page on hover and hide again when the
 pointer leaves, unless the address bar is in use or a popup opened from
 the toolbar is showing. The page card then has the same gap at the top as
-on the other sides. A checkbox in the toolbar context menu turns it on or
+on the other sides, and the toolbar only covers the content area, never the tab column. A checkbox in the toolbar context menu turns it on or
 off: opz.webapp.autoHideToolbar for web app windows (on by default) and
 opz.toolbar.autoHide for browser windows (off by default).
 ---
- browser/base/content/main-popupset.js         | 96 ++++++++++++++++++-
- browser/locales/en-US/browser/tabbrowser.ftl  |  3 +
- browser/themes/shared/browser-shared.css      | 32 +++++++
- .../themes/shared/tabbrowser/content-area.css |  5 +
- 4 files changed, 134 insertions(+), 2 deletions(-)
+ browser/base/content/main-popupset.js         | 117 +++++++++++++++++-
+ browser/locales/en-US/browser/tabbrowser.ftl  |   3 +
+ browser/themes/shared/browser-shared.css      |  33 +++++
+ .../themes/shared/tabbrowser/content-area.css |   5 +
+ 4 files changed, 156 insertions(+), 2 deletions(-)
 
 diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
-index ea31a7ce48..37319addf3 100644
+index ea31a7ce48..ab6fd5fa47 100644
 --- a/browser/base/content/main-popupset.js
 +++ b/browser/base/content/main-popupset.js
-@@ -806,8 +806,100 @@ window.addEventListener(
+@@ -806,8 +806,121 @@ window.addEventListener(
    { once: true }
  );
  
@@ -67,6 +67,27 @@ index ea31a7ce48..37319addf3 100644
 +    for (let { pref } of OPZ_AUTOHIDE) {
 +      Services.prefs.removeObserver(pref, opzSyncAutoHide);
 +    }
++  },
++  { once: true }
++);
++
++// Opz: the hidden toolbar slides down over the content area only, so it
++// never covers the tab column (browser-shared.css reads these offsets).
++window.addEventListener(
++  "load",
++  () => {
++    let tabbox = document.getElementById("tabbrowser-tabbox");
++    let update = () => {
++      let rect = tabbox.getBoundingClientRect();
++      let root = document.documentElement;
++      root.style.setProperty("--opz-toolbox-left", `${rect.left}px`);
++      root.style.setProperty(
++        "--opz-toolbox-right",
++        `${window.innerWidth - rect.right}px`
++      );
++    };
++    new ResizeObserver(update).observe(tabbox);
++    window.addEventListener("resize", update);
 +  },
 +  { once: true }
 +);
@@ -122,7 +143,7 @@ index ea31a7ce48..37319addf3 100644
    if (!item) {
      item = document.createXULElement("menuitem");
      item.className = "opz-toolbar-option";
-@@ -820,7 +912,7 @@ function opzUpdateToolbarOptions(popup) {
+@@ -820,7 +933,7 @@ function opzUpdateToolbarOptions(popup) {
          !item.hasAttribute("checked")
        )
      );
@@ -143,10 +164,10 @@ index 734e9b3aca..72cc6dbc90 100644
 +    .label = Show toolbar only on hover
 +    .accesskey = t
 diff --git a/browser/themes/shared/browser-shared.css b/browser/themes/shared/browser-shared.css
-index 368c691115..005d5d18fc 100644
+index 368c691115..82fd2244a2 100644
 --- a/browser/themes/shared/browser-shared.css
 +++ b/browser/themes/shared/browser-shared.css
-@@ -1695,3 +1695,35 @@ popupnotificationcontent {
+@@ -1695,3 +1695,36 @@ popupnotificationcontent {
  #syncedTabsOpenSelectedInPrivateWindow {
    display: none !important;
  }
@@ -157,7 +178,8 @@ index 368c691115..005d5d18fc 100644
 + * main-popupset.js). */
 +:root:is([taskbartab][opz-autohide-toolbar], :not([taskbartab], [popup-window])[opz-autohide-browser-toolbar]):not([inFullscreen]) #navigator-toolbox {
 +  position: fixed;
-+  inset-inline: 0;
++  left: var(--opz-toolbox-left, 0);
++  right: var(--opz-toolbox-right, 0);
 +  top: 0;
 +  z-index: 3;
 +  background: inherit;
