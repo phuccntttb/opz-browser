@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Thu, 26 Nov 2026 19:24:01 +0700
+Subject: [PATCH] New tab: the New Tab button's menu opens the address bar with
+ its results
+
+---
+ browser/base/content/browser-commands.js | 11 ++++++++
+ browser/base/content/browser.js          | 33 +++++++++++++++++++++++-
+ 2 files changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/browser/base/content/browser-commands.js b/browser/base/content/browser-commands.js
+index 25d5ed59e0..5c41c82304 100644
+--- a/browser/base/content/browser-commands.js
++++ b/browser/base/content/browser-commands.js
+@@ -255,6 +255,17 @@ var BrowserCommands = {
+     // Opz: no empty tab. The address bar opens over the current tab and
+     // whatever is picked opens in a new tab; Escape leaves nothing behind.
+     if (!werePassedURL && !searchClipboard && where == "tab") {
++      // A menu item (the New Tab button's menu) waits for its menu to close,
++      // which would otherwise close the results right after they open.
++      let menu = event?.target?.closest?.("menupopup");
++      if (menu && menu.state != "closed") {
++        menu.addEventListener(
++          "popuphidden",
++          () => setTimeout(() => this.openTab()),
++          { once: true }
++        );
++        return;
++      }
+       gURLBar.opzOpenInNewTab = true;
+       // Hidden until its results are in, so the bar and the results appear
+       // together; the timeout covers a query with nothing to show.
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index 94177d2385..a801f6b0c4 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -1964,12 +1964,43 @@ let gFileMenu = {
+  *        A click event on a userContext File Menu option
+  */
+ function openNewUserContextTab(event) {
++  let userContextId = parseInt(event.target.getAttribute("data-usercontextid"));
++  // Opz: "New Tab" opens the address bar over the current tab, like the
++  // New Tab button; a container tab opens with the results showing.
++  if (!userContextId) {
++    BrowserCommands.openTab({ event });
++    return;
++  }
+   openTrustedLinkIn(BROWSER_NEW_TAB_URL, "tab", {
+-    userContextId: parseInt(event.target.getAttribute("data-usercontextid")),
++    userContextId,
+     eventDetail: {
+       containerSource: event.target.dataset.containerEntrypoint,
+     },
+   });
++  let tab = gBrowser.selectedTab;
++  let showResults = () => {
++    if (gBrowser.selectedTab == tab && gURLBar.focused && !gURLBar.value) {
++      gURLBar.startQuery({ allowAutofill: false });
++    }
++  };
++  let menu = event.target.closest("menupopup");
++  let whenMenuClosed = callback =>
++    menu && menu.state != "closed"
++      ? menu.addEventListener("popuphidden", () => setTimeout(callback), {
++          once: true,
++        })
++      : callback();
++  whenMenuClosed(() => {
++    if (gURLBar.focused) {
++      showResults();
++      return;
++    }
++    gURLBar.inputField.addEventListener("focus", showResults, { once: true });
++    setTimeout(
++      () => gURLBar.inputField.removeEventListener("focus", showResults),
++      2000
++    );
++  });
+ }
+ 
+ var XULBrowserWindow = {

@@ -25,6 +25,8 @@ Chạy sau mỗi lần build lớn hoặc nâng cấp Firefox:
   Tabs and browsing có "Browser layout" để chuyển về tab ngang. Chuyển sang tab ngang thì cột
   bên trái biến mất hẳn; Cmd+B / Ctrl+B mở panel bookmark có nút chọn panel ở tiêu đề.
 - [ ] **New Tab:** trống hẳn: không có ô tìm kiếm, Top Sites, Highlights, widget hay hình nền.
+  Bấm nút New Tab, Ctrl+T, hoặc chuột phải nút New Tab → "New Tab": khung ô URL nổi kèm danh sách gợi ý
+  gắn ngay bên dưới; chọn một container trong menu đó thì tab mới mở ra cũng hiện danh sách gợi ý.
 - [ ] **Thanh công cụ:** chỉ có lùi/tiến/tải lại, nút sidebar, ô địa chỉ ở giữa và menu ba gạch
   (không có nút Extensions, New Tab, "List all tabs"); bấm nút sidebar thì cột tab ghim mở rộng,
   bấm lần nữa thì thu gọn; thanh URL không có nút chọn
