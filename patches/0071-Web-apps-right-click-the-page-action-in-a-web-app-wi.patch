@@ -1,0 +1,207 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Fri, 27 Nov 2026 08:18:46 +0700
+Subject: [PATCH] Web apps: right-click the page action in a web app window to
+ set the page the app opens
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The menu shows the current start page, and has "Use This Page as Start
+Page" and "Set Start Page…" (a prompt; an address without a scheme gets
+https://). The start page must be http(s) within the app's scope.
+TaskbarTabs.setStartUrl patches the registry's startUrl.
+---
+ .../taskbartabs/TaskbarTabs.sys.mjs           | 27 ++++++
+ .../taskbartabs/TaskbarTabsPageAction.sys.mjs | 95 +++++++++++++++++++
+ .../taskbartabs/TaskbarTabsRegistry.sys.mjs   |  3 +
+ browser/locales/en-US/browser/taskbartabs.ftl | 17 ++++
+ 4 files changed, 142 insertions(+)
+
+diff --git a/browser/components/taskbartabs/TaskbarTabs.sys.mjs b/browser/components/taskbartabs/TaskbarTabs.sys.mjs
+index aa395b25ed..728c89fbe4 100644
+--- a/browser/components/taskbartabs/TaskbarTabs.sys.mjs
++++ b/browser/components/taskbartabs/TaskbarTabs.sys.mjs
+@@ -220,6 +220,33 @@ export const TaskbarTabs = new (class {
+     };
+   }
+ 
++  /**
++   * Opz: changes the page a Taskbar Tab opens when launched.
++   *
++   * @param {string} aId - The ID of the Taskbar Tab.
++   * @param {nsIURI} aUrl - An http(s) page within the Taskbar Tab's scope.
++   * @returns {Promise<boolean>} Whether aUrl was accepted.
++   */
++  async setStartUrl(aId, aUrl) {
++    await this.#ready;
++    let taskbarTab = this.#registry.getTaskbarTab(aId);
++    if (!["http", "https"].includes(aUrl.scheme)) {
++      return false;
++    }
++    let inScope;
++    try {
++      inScope = taskbarTab.isScopeNavigable(aUrl);
++    } catch (e) {
++      // No base domain, e.g. localhost or an IP address.
++      inScope = taskbarTab.scopes.some(scope => scope.hostname == aUrl.host);
++    }
++    if (!inScope) {
++      return false;
++    }
++    this.#registry.patchTaskbarTab(taskbarTab, { startUrl: aUrl.spec });
++    return true;
++  }
++
+   async resetForTests(...args) {
+     await this.#ready;
+     return this.#registry.resetForTests(...args);
+diff --git a/browser/components/taskbartabs/TaskbarTabsPageAction.sys.mjs b/browser/components/taskbartabs/TaskbarTabsPageAction.sys.mjs
+index f16f137529..250343ccaa 100644
+--- a/browser/components/taskbartabs/TaskbarTabsPageAction.sys.mjs
++++ b/browser/components/taskbartabs/TaskbarTabsPageAction.sys.mjs
+@@ -55,6 +55,11 @@ export const TaskbarTabsPageAction = {
+         "data-l10n-id",
+         "taskbar-tab-urlbar-button-close"
+       );
++      taskbarTabsButton.addEventListener("contextmenu", e => {
++        e.preventDefault();
++        e.stopPropagation();
++        opzShowStartPageMenu(aWindow, taskbarTabsButton, e);
++      });
+     }
+ 
+     initVisibilityChanges(aWindow, taskbarTabsButton);
+@@ -174,3 +179,93 @@ function initVisibilityChanges(aWindow, aElement) {
+ 
+   observer();
+ }
++
++/**
++ * Opz: the menu of the page action in a Taskbar Tab window, to change the
++ * page the Taskbar Tab opens when launched.
++ *
++ * @param {Window} aWindow - The Taskbar Tab window.
++ * @param {Element} aButton - The page action.
++ * @param {MouseEvent} aEvent - The contextmenu event.
++ */
++async function opzShowStartPageMenu(aWindow, aButton, aEvent) {
++  let doc = aWindow.document;
++  let id = lazy.TaskbarTabsUtils.getTaskbarTabIdFromWindow(aWindow);
++  let taskbarTab = await lazy.TaskbarTabs.getTaskbarTab(id);
++
++  let popup = doc.getElementById("opz-taskbar-tab-start-page-menu");
++  if (!popup) {
++    popup = doc.createXULElement("menupopup");
++    popup.id = "opz-taskbar-tab-start-page-menu";
++    let item = (itemId, l10nId) => {
++      let el = doc.createXULElement("menuitem");
++      el.id = itemId;
++      doc.l10n.setAttributes(el, l10nId);
++      popup.append(el);
++      return el;
++    };
++    let current = item(
++      "opz-taskbar-tab-start-page-current",
++      "opz-taskbar-tab-start-page-current"
++    );
++    current.disabled = true;
++    current.setAttribute("crop", "center");
++    popup.append(doc.createXULElement("menuseparator"));
++    item(
++      "opz-taskbar-tab-start-page-use-current",
++      "opz-taskbar-tab-start-page-use-current"
++    );
++    item("opz-taskbar-tab-start-page-edit", "opz-taskbar-tab-start-page-edit");
++    popup.addEventListener("command", e =>
++      opzOnStartPageCommand(aWindow, id, e.target.id)
++    );
++    doc.getElementById("mainPopupSet").append(popup);
++  }
++
++  let current = doc.getElementById("opz-taskbar-tab-start-page-current");
++  doc.l10n.setArgs(current, { url: taskbarTab.startUrl });
++  await doc.l10n.translateElements([current]);
++  let currentUri = aWindow.gBrowser.currentURI;
++  doc.getElementById("opz-taskbar-tab-start-page-use-current").disabled =
++    currentUri.spec == taskbarTab.startUrl ||
++    !["http", "https"].includes(currentUri.scheme);
++  popup.openPopupAtScreen(aEvent.screenX, aEvent.screenY, true, aEvent);
++}
++
++async function opzOnStartPageCommand(aWindow, aId, aItemId) {
++  let doc = aWindow.document;
++  let url;
++  if (aItemId == "opz-taskbar-tab-start-page-use-current") {
++    url = aWindow.gBrowser.currentURI;
++  } else if (aItemId == "opz-taskbar-tab-start-page-edit") {
++    let taskbarTab = await lazy.TaskbarTabs.getTaskbarTab(aId);
++    let [title, label] = await doc.l10n.formatValues([
++      "opz-taskbar-tab-start-page-dialog-title",
++      {
++        id: "opz-taskbar-tab-start-page-dialog-text",
++        args: { name: taskbarTab.name },
++      },
++    ]);
++    let value = { value: taskbarTab.startUrl };
++    if (!Services.prompt.prompt(aWindow, title, label, value, null, {})) {
++      return;
++    }
++    let text = value.value.trim();
++    if (!/^[a-z][a-z\d+.-]*:/i.test(text)) {
++      text = "https://" + text;
++    }
++    try {
++      url = Services.io.newURI(text);
++    } catch (e) {}
++  } else {
++    return;
++  }
++
++  if (!url || !(await lazy.TaskbarTabs.setStartUrl(aId, url))) {
++    let [title, message] = await doc.l10n.formatValues([
++      "opz-taskbar-tab-start-page-dialog-title",
++      "opz-taskbar-tab-start-page-invalid",
++    ]);
++    Services.prompt.alert(aWindow, title, message);
++  }
++}
+diff --git a/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs b/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
+index ae51b4c608..8dcf652174 100644
+--- a/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
++++ b/browser/components/taskbartabs/TaskbarTabsRegistry.sys.mjs
+@@ -148,6 +148,9 @@ class TaskbarTab {
+     if ("shortcutRelativePath" in aPatch) {
+       this.#shortcutRelativePath = aPatch.shortcutRelativePath;
+     }
++    if ("startUrl" in aPatch) {
++      this.#startUrl = aPatch.startUrl;
++    }
+   }
+ }
+ 
+diff --git a/browser/locales/en-US/browser/taskbartabs.ftl b/browser/locales/en-US/browser/taskbartabs.ftl
+index 5f43770c0b..27d38db680 100644
+--- a/browser/locales/en-US/browser/taskbartabs.ftl
++++ b/browser/locales/en-US/browser/taskbartabs.ftl
+@@ -49,3 +49,20 @@ taskbar-tab-title-default = { $name } in { -brand-full-name }
+ taskbar-tab-title-container = { $name } ({ $container }) in { -brand-full-name }
+ taskbar-tab-title-profile = { $name } in { $profile } — { -brand-full-name }
+ taskbar-tab-title-container-profile = { $name } ({ $container }) in { $profile } — { -brand-full-name }
++
++## Opz: the menu of the page action in a web app window, to change the page
++## the app opens when launched.
++
++# $url (String) - The page the web app opens when launched.
++opz-taskbar-tab-start-page-current =
++    .label = Start page: { $url }
++opz-taskbar-tab-start-page-use-current =
++    .label = Use This Page as Start Page
++    .accesskey = U
++opz-taskbar-tab-start-page-edit =
++    .label = Set Start Page…
++    .accesskey = S
++opz-taskbar-tab-start-page-dialog-title = Start Page
++# $name (String) - The name of the web app.
++opz-taskbar-tab-start-page-dialog-text = Page that { $name } opens when you launch it:
++opz-taskbar-tab-start-page-invalid = The start page must be an http or https address on the same site as the app.
