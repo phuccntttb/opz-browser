@@ -28,7 +28,7 @@ Patch hiện có:
 - `0005-Toolbar-...`: bỏ nút "List all tabs" khỏi thanh tab.
 - `0006-Sidebar-...`: bật tab dọc mặc định, cột tab không có icon công cụ; với tab ngang thì không có cột bên trái.
 - `0007-Theme-...`: thêm theme "Opz" (xám phẳng, không màu nhấn, sáng/tối theo hệ thống).
-- `0008-Content-area-...`: vùng nội dung trang bo tròn đủ bốn góc, cách mép cửa sổ một khoảng nhỏ (phía giáp cột tab dọc thì không cách, để icon tab nằm giữa cột).
+- `0008-Content-area-...`: vùng nội dung trang bo tròn đủ bốn góc, cách mép cửa sổ một khoảng nhỏ (`--opz-content-gap`, ít nhất 5px; trước đây là `--space-xsmall` ≈ 3,7px, mỏng quá) (phía giáp cột tab dọc thì không cách, để icon tab nằm giữa cột).
 - `0009-URL-bar-...`: khi không gõ, ô URL chỉ rộng vừa địa chỉ, nằm giữa thanh công cụ, không có nền (bấm vào thì giãn hết chiều rộng, thanh công cụ giữ nguyên chiều cao); bỏ khiên, nút dịch, ngôi sao bookmark.
 - `0010-Sidebar-...`: cột tab dọc thu gọn thành icon, rê chuột vào thì mở rộng, rời chuột thì thu lại (mặc định `sidebar.visibility = "expand-on-hover"` cũng đặt trong `prefs/opz.js`, vì giá trị trùng mặc định của Firefox không được lưu vào profile).
 - `0011-Toolbar-...`: bỏ nút sidebar và nút New Tab khỏi thanh công cụ; nút sidebar không bị Firefox tự thêm lại vào cuối thanh công cụ (qua pref `sidebar.revamp`) ở lần khởi động sau.

@@ -52,10 +52,10 @@ index 1bb6975ae7..e2103ecd19 100644
          // If the browser was playing audio, we should remove the playing state.
          if (this._tab.hasAttribute("soundplaying")) {
 diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
-index 837f602186..925685df80 100644
+index 32e78590d9..e34e94c040 100644
 --- a/browser/themes/shared/tabbrowser/content-area.css
 +++ b/browser/themes/shared/tabbrowser/content-area.css
-@@ -1130,3 +1130,30 @@ split-view-footer {
+@@ -1131,3 +1131,30 @@ split-view-footer {
  #window-modal-dialog > .dialogOverlay[topmost="true"] {
    background-color: transparent;
  }

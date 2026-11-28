@@ -5,14 +5,14 @@ Subject: [PATCH] Content area: round all four corners, with a gap to the
  window edges
 
 ---
- .../themes/shared/tabbrowser/content-area.css | 28 +++++++++++++++++++
- 1 file changed, 28 insertions(+)
+ .../themes/shared/tabbrowser/content-area.css | 29 +++++++++++++++++++
+ 1 file changed, 29 insertions(+)
 
 diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
-index 2ffa3cac3c..837f602186 100644
+index 2ffa3cac3c..32e78590d9 100644
 --- a/browser/themes/shared/tabbrowser/content-area.css
 +++ b/browser/themes/shared/tabbrowser/content-area.css
-@@ -614,6 +614,34 @@
+@@ -614,6 +614,35 @@
    }
  }
  
@@ -25,7 +25,8 @@ index 2ffa3cac3c..837f602186 100644
 +    margin: 0 var(--opz-content-gap) var(--opz-content-gap);
 +    border: var(--border-width) solid var(--chrome-content-separator-color) !important;
 +    border-radius: var(--border-radius-medium) !important;
-+    --opz-content-gap: max(var(--space-xsmall), calc(var(--window-border-radius) - var(--border-radius-medium)));
++    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
++    --opz-content-gap: max(5px, calc(var(--window-border-radius) - var(--border-radius-medium)));
 +
 +    /* No gap on the side that faces the tab column: there it would read as
 +       part of the column and pull the tab icons off its middle. */
