@@ -206,6 +206,9 @@ pref("services.sync.prefs.sync.opz.containers.sync", true);
 pref("opz.webapp.autoHideToolbar", true);
 // Browser windows can do the same (toolbar context menu); off by default.
 pref("opz.toolbar.autoHide", false);
+// The vertical tab column can hide until the pointer reaches the window edge
+// (patch 0073; tab and toolbar context menus); off by default.
+pref("opz.sidebar.autoHide", false);
 // Toolbar buttons and address bar icons always show; the toolbar context
 // menu's "Show buttons only on hover" hides them until the pointer is over it.
 pref("opz.toolbar.alwaysShowButtons", true);

@@ -1,0 +1,306 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Opz Browser <opz@localhost>
+Date: Sat, 28 Nov 2026 12:21:19 +0700
+Subject: [PATCH] Sidebar: hide the tab column until the pointer reaches the
+ window edge
+
+With opz.sidebar.autoHide on ("Show tab column only on hover" in the tab
+and toolbar context menus), the vertical tab column leaves the layout and
+the page takes the whole width. A strip at the window edge brings the
+column out over the page; it hides again when the pointer leaves, unless a
+popup opened from it is showing. Horizontal tabs, web app and popup windows
+and fullscreen are not affected.
+---
+ browser/base/content/main-popupset.js         | 70 ++++++++++++++-
+ .../tabbrowser/content/tab-context-menu.js    | 25 +++++-
+ browser/locales/en-US/browser/tabbrowser.ftl  |  3 +
+ browser/themes/shared/sidebar.css             | 87 +++++++++++++++++++
+ .../themes/shared/tabbrowser/content-area.css |  7 ++
+ 5 files changed, 186 insertions(+), 6 deletions(-)
+
+diff --git a/browser/base/content/main-popupset.js b/browser/base/content/main-popupset.js
+index 0eaed42043..3a4eb4ae2b 100644
+--- a/browser/base/content/main-popupset.js
++++ b/browser/base/content/main-popupset.js
+@@ -854,6 +854,27 @@ window.addEventListener(
+   { once: true }
+ );
+ 
++// Opz: the vertical tab column can hide until the pointer reaches the window
++// edge (CSS at the end of sidebar.css).
++const OPZ_AUTOHIDE_SIDEBAR_PREF = "opz.sidebar.autoHide";
++function opzSyncAutoHideSidebar() {
++  document.documentElement.toggleAttribute(
++    "opz-autohide-sidebar",
++    Services.prefs.getBoolPref(OPZ_AUTOHIDE_SIDEBAR_PREF, false)
++  );
++}
++opzSyncAutoHideSidebar();
++Services.prefs.addObserver(OPZ_AUTOHIDE_SIDEBAR_PREF, opzSyncAutoHideSidebar);
++window.addEventListener(
++  "unload",
++  () =>
++    Services.prefs.removeObserver(
++      OPZ_AUTOHIDE_SIDEBAR_PREF,
++      opzSyncAutoHideSidebar
++    ),
++  { once: true }
++);
++
+ // Opz: the hidden toolbar slides down over the content area only, so it
+ // never covers the tab column (browser-shared.css reads these offsets).
+ window.addEventListener(
+@@ -888,6 +909,13 @@ window.addEventListener(
+       root.style.setProperty("--opz-sidebar-bg-x", `${-left}px`);
+       root.style.setProperty("--opz-sidebar-bg-y", `${-top}px`);
+     };
++    // The hidden tab column is moved off the window edge by its own width.
++    new ResizeObserver(() =>
++      document.documentElement.style.setProperty(
++        "--opz-sidebar-width",
++        `${sidebar.getBoundingClientRect().width}px`
++      )
++    ).observe(sidebar);
+     let sidebarObserver = new ResizeObserver(updateSidebarBackground);
+     sidebarObserver.observe(sidebar);
+     sidebarObserver.observe(tabbox);
+@@ -937,7 +965,10 @@ window.addEventListener(
+   { once: true }
+ );
+ 
++// The same for the hidden tab column (opz-sidebar-reveal), e.g. while the
++// tab context menu is open.
+ const opzToolbarPopups = new Set();
++const opzSidebarPopups = new Set();
+ function opzTrackToolbarPopup(event) {
+   let popup = event.target;
+   if (!popup.matches?.("menupopup, panel")) {
+@@ -945,17 +976,27 @@ function opzTrackToolbarPopup(event) {
+   }
+   if (event.type == "popupshown") {
+     let anchor = popup.anchorNode || popup.triggerNode;
+-    if (!anchor?.closest?.("#navigator-toolbox")) {
++    // Nodes in sidebar-main's shadow tree, like its tool buttons.
++    let host = anchor?.getRootNode?.().host || anchor;
++    if (anchor?.closest?.("#navigator-toolbox")) {
++      opzToolbarPopups.add(popup);
++    } else if (host?.closest?.("#sidebar-container")) {
++      opzSidebarPopups.add(popup);
++    } else {
+       return;
+     }
+-    opzToolbarPopups.add(popup);
+   } else {
+     opzToolbarPopups.delete(popup);
++    opzSidebarPopups.delete(popup);
+   }
+   document.documentElement.toggleAttribute(
+     "opz-toolbar-reveal",
+     opzToolbarPopups.size > 0
+   );
++  document.documentElement.toggleAttribute(
++    "opz-sidebar-reveal",
++    opzSidebarPopups.size > 0
++  );
+ }
+ window.addEventListener("popupshown", opzTrackToolbarPopup);
+ window.addEventListener("popuphidden", opzTrackToolbarPopup);
+@@ -1002,8 +1043,31 @@ function opzUpdateToolbarOptions(popup) {
+     Services.prefs.getBoolPref(pref, fallback)
+   );
+ 
++  let sidebarItem = popup.querySelector(".opz-sidebar-autohide-option");
++  if (!sidebarItem) {
++    sidebarItem = document.createXULElement("menuitem");
++    sidebarItem.className = "opz-toolbar-option opz-sidebar-autohide-option";
++    sidebarItem.setAttribute("type", "checkbox");
++    document.l10n.setAttributes(sidebarItem, "opz-sidebar-on-hover");
++    sidebarItem.addEventListener("command", () =>
++      Services.prefs.setBoolPref(
++        OPZ_AUTOHIDE_SIDEBAR_PREF,
++        sidebarItem.hasAttribute("checked")
++      )
++    );
++    autoHideItem.after(sidebarItem);
++  }
++  // Only browser windows with vertical tabs have the tab column.
++  sidebarItem.hidden =
++    document.documentElement.hasAttribute("taskbartab") ||
++    !Services.prefs.getBoolPref("sidebar.verticalTabs", false);
++  sidebarItem.toggleAttribute(
++    "checked",
++    Services.prefs.getBoolPref(OPZ_AUTOHIDE_SIDEBAR_PREF, false)
++  );
++
+   let item = popup.querySelector(
+-    ".opz-toolbar-option:not(.opz-webapp-toolbar-option)"
++    ".opz-toolbar-option:not(.opz-webapp-toolbar-option, .opz-sidebar-autohide-option)"
+   );
+   if (!item) {
+     item = document.createXULElement("menuitem");
+diff --git a/browser/components/tabbrowser/content/tab-context-menu.js b/browser/components/tabbrowser/content/tab-context-menu.js
+index 194679ec4f..60db006338 100644
+--- a/browser/components/tabbrowser/content/tab-context-menu.js
++++ b/browser/components/tabbrowser/content/tab-context-menu.js
+@@ -1371,15 +1371,34 @@ var TabContextMenu = {
+           !Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
+         )
+       );
+-      aPopupMenu.append(separator, item);
++      // Opz: the whole column hides until the pointer reaches the window
++      // edge (sidebar.css).
++      let autoHideItem = document.createXULElement("menuitem");
++      autoHideItem.id = "opz_context_autoHideSidebar";
++      autoHideItem.setAttribute("type", "checkbox");
++      document.l10n.setAttributes(autoHideItem, "opz-sidebar-on-hover");
++      autoHideItem.addEventListener("command", () =>
++        Services.prefs.setBoolPref(
++          "opz.sidebar.autoHide",
++          autoHideItem.hasAttribute("checked")
++        )
++      );
++      aPopupMenu.append(separator, item, autoHideItem);
+     }
++    let autoHideItem = document.getElementById("opz_context_autoHideSidebar");
+     let sidebarMain = document.querySelector("sidebar-main");
+-    item.hidden = item.previousElementSibling.hidden =
+-      !sidebarMain || !SidebarController.sidebarVerticalTabsEnabled;
++    item.hidden =
++      autoHideItem.hidden =
++      item.previousElementSibling.hidden =
++        !sidebarMain || !SidebarController.sidebarVerticalTabsEnabled;
+     item.toggleAttribute(
+       "checked",
+       Services.prefs.getBoolPref("opz.sidebar.expandOnHover", true)
+     );
++    autoHideItem.toggleAttribute(
++      "checked",
++      Services.prefs.getBoolPref("opz.sidebar.autoHide", false)
++    );
+   },
+ 
+   // Opz: a new tab in a container, like the New Tab button's popup.
+diff --git a/browser/locales/en-US/browser/tabbrowser.ftl b/browser/locales/en-US/browser/tabbrowser.ftl
+index a15bbdf92b..1684c39e8c 100644
+--- a/browser/locales/en-US/browser/tabbrowser.ftl
++++ b/browser/locales/en-US/browser/tabbrowser.ftl
+@@ -530,3 +530,6 @@ opz-toolbar-buttons-on-hover =
+ opz-webapp-toolbar-on-hover =
+     .label = Show toolbar only on hover
+     .accesskey = t
++opz-sidebar-on-hover =
++    .label = Show tab column only on hover
++    .accesskey = c
+diff --git a/browser/themes/shared/sidebar.css b/browser/themes/shared/sidebar.css
+index 15877cb7ea..7c23af0dc4 100644
+--- a/browser/themes/shared/sidebar.css
++++ b/browser/themes/shared/sidebar.css
+@@ -600,3 +600,90 @@ sidebar-main,
+     background-color: var(--toolbox-background-color-inactive);
+   }
+ }
++
++/* Opz: the vertical tab column can hide until the pointer reaches the window
++ * edge it sits on (opz.sidebar.autoHide, mirrored as opz-autohide-sidebar by
++ * main-popupset.js). It then slides out over the page and hides again once
++ * the pointer leaves it, unless a popup opened from it is showing
++ * (opz-sidebar-reveal). The page takes the whole width meanwhile. It slides
++ * with inset-inline-start rather than translate, which the column's own
++ * expand/collapse animation uses (browser-sidebar.js). */
++@media -moz-pref("sidebar.verticalTabs") {
++  :root[opz-autohide-sidebar]:not([taskbartab], [popup-window], [inFullscreen]) {
++    #sidebar-container {
++      position: absolute !important;
++      inset-block: 0 !important;
++      /* A strip at the window edge stays under the pointer to bring it back. */
++      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
++      inset-inline-start: calc(6px - var(--opz-sidebar-width, 300px)) !important;
++      inset-inline-end: auto !important;
++      z-index: var(--browser-area-z-index-sidebar-expand-on-hover) !important;
++      color: var(--toolbox-text-color);
++      background-image: var(--toolbox-background-gradient), image(var(--toolbox-background-color));
++      background-size:
++        100vw 100vh,
++        auto;
++      background-color: light-dark(#e8e8e8, #202020);
++      border-inline-end: 0.01px solid var(--sidebar-border-color);
++      opacity: 0;
++      transition:
++        inset-inline-start 150ms ease,
++        opacity 150ms ease;
++      transition-delay: 400ms;
++
++      &[sidebar-positionend] {
++        inset-inline-start: auto !important;
++        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
++        inset-inline-end: calc(6px - var(--opz-sidebar-width, 300px)) !important;
++        border-inline-end: none;
++        border-inline-start: 0.01px solid var(--sidebar-border-color);
++        background-position-x: 100%;
++        transition-property: inset-inline-end, opacity;
++      }
++
++      &:hover,
++      :root[opz-sidebar-reveal] & {
++        inset-inline-start: 0 !important;
++        opacity: 1;
++        transition-delay: 100ms;
++
++        &[sidebar-positionend] {
++          inset-inline-start: auto !important;
++          inset-inline-end: 0 !important;
++        }
++      }
++
++      @media (prefers-reduced-motion: reduce) {
++        transition-property: opacity;
++      }
++    }
++
++    /* A theme that paints the whole window (see above): the column sits at
++     * the window edge when it shows, whatever its offset while hidden. */
++    &[lwtheme]:not([theme-image-in-toolbox], [lwtheme-image]) #sidebar-container {
++      background-image: var(--toolbox-background-image);
++      background-repeat: no-repeat;
++      background-size: 100vw 100vh;
++      background-position: 0 var(--opz-sidebar-bg-y, 0);
++      background-color: var(--toolbox-background-color);
++
++      &[sidebar-positionend] {
++        background-position-x: 100%;
++      }
++
++      &:-moz-window-inactive {
++        background-color: var(--toolbox-background-color-inactive);
++      }
++    }
++
++    /* The column takes no room, so nothing makes room for it. */
++    #sidebar-launcher-splitter {
++      display: none !important;
++    }
++
++    #tabbrowser-tabbox,
++    #sidebar-box {
++      margin-inline: 0 !important;
++    }
++  }
++}
+diff --git a/browser/themes/shared/tabbrowser/content-area.css b/browser/themes/shared/tabbrowser/content-area.css
+index 8aa1d5b13c..30a76de865 100644
+--- a/browser/themes/shared/tabbrowser/content-area.css
++++ b/browser/themes/shared/tabbrowser/content-area.css
+@@ -635,6 +635,13 @@
+       margin-inline-end: 0;
+     }
+ 
++    /* With the tab column hidden (sidebar.css): the same gap on its side. */
++    @media -moz-pref("sidebar.verticalTabs") {
++      :root[opz-autohide-sidebar]:not([taskbartab], [popup-window], [inFullscreen]) #tabbrowser-tabbox & {
++        margin-inline: var(--opz-content-gap);
++      }
++    }
++
+     /* With the toolbar hidden (browser-shared.css): the same gap at the top. */
+     :root:is([taskbartab][opz-autohide-toolbar], :not([taskbartab], [popup-window])[opz-autohide-browser-toolbar]):not([inFullscreen]) & {
+       margin-block-start: var(--opz-content-gap);
